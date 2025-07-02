@@ -1,0 +1,186 @@
+/* content.css */
+#openai-translator-small-icon-popup {
+  position: absolute;
+  z-index: 2147483647;
+  cursor: pointer;
+  background-color: rgba(240, 240, 240, 0.95);
+  border: 1px solid #ccc;
+  border-radius: 15px; 
+  padding: 3px 6px;   
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1; 
+}
+
+#openai-translator-small-icon-popup .emoji-trigger {
+  /* 絵文字特有の調整があればここに */
+}
+
+#openai-translator-detailed-popup {
+  position: absolute;
+  z-index: 2147483647;
+  background-color: #0b0d0f; /* ダークモード背景 */
+  color: #abb2bf;            /* ダークモードテキスト */
+  border: 1px solid #444c56;
+  border-radius: 8px;
+  padding: 15px; /* Ensure padding for close button positioning */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  font-family: sans-serif;
+  font-size: 14px;
+  width: 400px; /* 初期幅 */
+  min-width: 200px; /* 最小幅 */
+  min-height: 100px; /* 最小高さ */
+  box-sizing: border-box;
+  display: flex; /* Added to help with content layout if needed, but primarily for structure */
+  flex-direction: column; /* Content flows downwards */
+}
+
+/* Close button for the detailed popup */
+#openai-translator-detailed-popup .popup-close-button {
+  position: absolute;
+  top: 8px; /* Adjust for visual preference */
+  right: 10px; /* Adjust for visual preference */
+  background: none;
+  border: none;
+  font-size: 22px; /* Make it a bit larger for easier clicking */
+  color: #abb2bf; 
+  cursor: pointer;
+  padding: 0; /* Remove padding if not needed for visual balance */
+  line-height: 1; /* Ensure tight fit */
+  z-index: 10; /* Above other content within the popup */
+  font-weight: bold;
+}
+
+#openai-translator-detailed-popup .popup-close-button:hover {
+  color: #e06c75; /* Reddish color on hover for warning/action */
+}
+
+/* リサイズハンドル */
+#openai-translator-detailed-popup .resize-handle {
+  position: absolute;
+  background: transparent;
+  z-index: 5; /* Ensure resize handles are interactable */
+}
+
+#openai-translator-detailed-popup .resize-handle-e {
+  top: 0;
+  right: 0;
+  width: 10px; /* Slightly wider for easier grabbing */
+  height: 100%;
+  cursor: e-resize;
+}
+
+#openai-translator-detailed-popup .resize-handle-s {
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 10px; /* Slightly wider for easier grabbing */
+  cursor: s-resize;
+}
+
+#openai-translator-detailed-popup .resize-handle-se {
+  bottom: 0;
+  right: 0;
+  width: 12px; /* Slightly wider for easier grabbing */
+  height: 12px;
+  cursor: se-resize;
+  z-index: 6; /* Above other handles if overlapping */
+}
+
+#openai-translator-detailed-popup .translator-popup-content {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1; /* Allow content to take available space */
+  overflow: hidden; /* Prevent content from overflowing popup boundaries before scroll kicks in */
+  margin-top: 15px; /* Add some space below the potential close button area */
+}
+
+#openai-translator-detailed-popup .language-selector {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+#openai-translator-detailed-popup .language-selector label {
+  margin-right: 8px;
+  color: #98c379;
+}
+
+#openai-translator-detailed-popup select {
+  flex-grow: 1;
+  padding: 8px;
+  border: 1px solid #444c56;
+  border-radius: 4px;
+  background-color: #0b0d0f;
+  color: #abb2bf;
+}
+
+#openai-translator-detailed-popup button:not(.popup-close-button) { /* Exclude close button from this styling */
+  background-color: #61afef;
+  color: #282c34;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+#openai-translator-detailed-popup button:not(.popup-close-button):hover {
+  background-color: #5299d8;
+}
+
+#openai-translator-detailed-popup #inlineLoadingIndicator {
+  text-align: center;
+  color: #e5c07b;
+  margin: 10px 0;
+}
+
+#openai-translator-detailed-popup .translation-output {
+  background-color: #0b0d0f; /* Should be same as popup or slightly different if desired */
+  padding: 10px;
+  border-radius: 4px;
+  min-height: 40px; 
+  /* margin-top: 0; Removed, handled by translator-popup-content margin-top */
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  font-size: 0.95em;
+  max-height: 400px; 
+  overflow-y: auto;  
+  flex-grow: 1; /* Allow output to take available vertical space */
+
+  scrollbar-width: thin; 
+  scrollbar-color: #6e7886 #0b0d0f;
+}
+
+#openai-translator-detailed-popup .translation-output::-webkit-scrollbar {
+  width: 8px; 
+}
+
+#openai-translator-detailed-popup .translation-output::-webkit-scrollbar-track {
+  background: #0b0d0f; 
+  border-radius: 10px; 
+  margin: 2px 0; 
+}
+
+#openai-translator-detailed-popup .translation-output::-webkit-scrollbar-thumb {
+  background-color: #6e7886; 
+  border-radius: 10px;   
+  border: 2px solid #0b0d0f; /* Adjusted border to match track for seamless look */
+}
+
+#openai-translator-detailed-popup .translation-output::-webkit-scrollbar-thumb:hover {
+  background-color: #818c99; 
+}
+
+#openai-translator-detailed-popup .translation-output::-webkit-scrollbar-button {
+  display: none;
+}
+
+#openai-translator-detailed-popup .translation-output::-webkit-scrollbar-corner {
+  background: transparent;
+  display: none;
+}

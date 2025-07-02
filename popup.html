@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>OpenAI Translator</title>
+  <link rel="stylesheet" type="text/css" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h2>OpenAI Translator</h2>
+    <textarea id="inputText" placeholder="翻訳したいテキストを入力..."></textarea>
+    <div class="language-selector">
+        <label for="targetLanguage">翻訳先の言語:</label>
+        <select id="targetLanguage">
+            <option value="Japanese">日本語</option>
+            <option value="English">英語</option>
+            <option value="Korean">韓国語</option>
+            <option value="Chinese">中国語</option>
+            {/* 他の言語オプションを追加 */}
+        </select>
+    </div>
+    <button id="translateButton">翻訳</button>
+    <div id="loadingIndicator" style="display: none;">翻訳中...</div>
+    <div class="result-container">
+      <h3>翻訳結果:</h3>
+      <p id="outputText"></p>
+    </div>
+    <div class="api-key-section">
+        <input type="password" id="apiKeyInput" placeholder="OpenAI APIキーを入力">
+        <button id="saveApiKeyButton">APIキーを保存</button>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
