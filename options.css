@@ -56,3 +56,21 @@ button:hover {
   font-weight: bold;
 }
 
+.info {
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: #e8f4fd;
+  border: 1px solid #bee5eb;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.info a {
+  color: #007bff;
+  text-decoration: none;
+}
+
+.info a:hover {
+  text-decoration: underline;
+}
+

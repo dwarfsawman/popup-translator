@@ -1,12 +1,11 @@
-// background.js (変更点は少ない、APIキー関連のメッセージも処理できるようにする)
+// background.js - OpenRouter API対応
 
 async function getApiKey() {
-  const result = await chrome.storage.local.get(['openaiApiKey']);
-  return result.openaiApiKey;
+  const result = await chrome.storage.local.get(['openrouterApiKey']);
+  return result.openrouterApiKey;
 }
 
-async function translateTextWithOpenAI(text, targetLanguage, apiKey) {
-  // ... (以前のコードと同じ)
+async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
   if (!apiKey) {
     return { error: 'APIキーが設定されていません。ポップアップから設定してください。' };
   }
@@ -14,35 +13,56 @@ async function translateTextWithOpenAI(text, targetLanguage, apiKey) {
     return { error: '翻訳するテキストが入力されていません。' };
   }
 
-  const API_URL = 'https://api.openai.com/v1/chat/completions';
+  const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+  // 翻訳先言語に応じたプロンプトを設定
+  let systemPrompt;
+  switch (targetLanguage) {
+    case 'Japanese':
+      systemPrompt = '以下の文章を日本語訳してください。なるべく直訳は避け自然な日本語にしてください。';
+      break;
+    case 'English':
+      systemPrompt = 'Please translate the following text to English. Make it natural and avoid literal translation.';
+      break;
+    case 'Korean':
+      systemPrompt = '다음 문장을 한국어로 번역해주세요. 직역보다는 자연스러운 한국어로 번역해주세요.';
+      break;
+    case 'Chinese':
+      systemPrompt = '请将以下文本翻译成中文。请避免直译，使用自然的中文表达。';
+      break;
+    default:
+      systemPrompt = `Please translate the following text to ${targetLanguage}. Make it natural and avoid literal translation.`;
+  }
 
   try {
     const response = await fetch(API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': chrome.runtime.getURL(''),
+        'X-Title': 'OpenRouter Translator Extension'
       },
       body: JSON.stringify({
-        model: "o4-mini",
+        model: "google/gemini-2.5-flash",
         messages: [
           {
             role: "system",
-            content: `以下の文章を日本語訳してください。なるべく直訳は避け自然な日本語にしてください。`
+            content: systemPrompt
           },
           {
             role: "user",
             content: text
           }
         ],
-        max_completion_tokens: 6000,
-        temperature: 1.0
+        max_tokens: 4000,
+        temperature: 0.3
       })
     });
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('OpenAI API Error:', errorData);
+      console.error('OpenRouter API Error:', errorData);
       let errorMessage = `APIエラー: ${response.status}`;
       if (errorData && errorData.error && errorData.error.message) {
         errorMessage += ` - ${errorData.error.message}`;
@@ -54,7 +74,7 @@ async function translateTextWithOpenAI(text, targetLanguage, apiKey) {
     if (data.choices && data.choices.length > 0 && data.choices[0].message) {
       return { translatedText: data.choices[0].message.content.trim() };
     } else {
-      console.error('OpenAI API Response format error:', data);
+      console.error('OpenRouter API Response format error:', data);
       return { error: 'APIからの応答形式が正しくありません。' };
     }
 
@@ -68,12 +88,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "translate") {
     (async () => {
       const apiKey = await getApiKey();
-      const result = await translateTextWithOpenAI(request.text, request.targetLanguage, apiKey);
+      const result = await translateTextWithOpenRouter(request.text, request.targetLanguage, apiKey);
       sendResponse(result);
     })();
     return true; // Indicate that the response is asynchronous
   } else if (request.action === "saveApiKey") {
-    chrome.storage.local.set({ openaiApiKey: request.apiKey }, () => {
+    chrome.storage.local.set({ openrouterApiKey: request.apiKey }, () => {
       if (chrome.runtime.lastError) {
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
       } else {

@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "OpenAI Inline Translator",
-  "version": "1.2", // バージョンアップ
-  "description": "Translate selected text on the page using OpenAI API. Configure API key in options.",
+  "name": "OpenRouter Inline Translator",
+  "version": "1.3",
+  "description": "Translate selected text on the page using OpenRouter API. Configure API key in options.",
   "permissions": [
     "storage",
     "scripting"
   ],
   "host_permissions": [
-    "https://api.openai.com/"
+    "https://openrouter.ai/"
   ],
   "background": {
     "service_worker": "background.js"

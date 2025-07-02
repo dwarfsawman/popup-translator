@@ -63,7 +63,7 @@ function createSmallIconPopup(x, y) {
 
       // APIリクエスト
       chrome.runtime.sendMessage(
-        { action: "translate", text: selectedTextGlobal },
+        { action: "translate", text: selectedTextGlobal, targetLanguage: "Japanese" },
         (response) => {
           // Ensure detailedPopup and its children are still available
           if (!detailedPopup) return;

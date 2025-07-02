@@ -2,12 +2,12 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>OpenAI Translator</title>
+  <title>OpenRouter Translator</title>
   <link rel="stylesheet" type="text/css" href="popup.css">
 </head>
 <body>
   <div class="container">
-    <h2>OpenAI Translator</h2>
+    <h2>OpenRouter Translator</h2>
     <textarea id="inputText" placeholder="翻訳したいテキストを入力..."></textarea>
     <div class="language-selector">
         <label for="targetLanguage">翻訳先の言語:</label>
@@ -16,7 +16,9 @@
             <option value="English">英語</option>
             <option value="Korean">韓国語</option>
             <option value="Chinese">中国語</option>
-            {/* 他の言語オプションを追加 */}
+            <option value="Spanish">スペイン語</option>
+            <option value="French">フランス語</option>
+            <option value="German">ドイツ語</option>
         </select>
     </div>
     <button id="translateButton">翻訳</button>
@@ -26,7 +28,7 @@
       <p id="outputText"></p>
     </div>
     <div class="api-key-section">
-        <input type="password" id="apiKeyInput" placeholder="OpenAI APIキーを入力">
+        <input type="password" id="apiKeyInput" placeholder="OpenRouter APIキーを入力">
         <button id="saveApiKeyButton">APIキーを保存</button>
     </div>
   </div>
