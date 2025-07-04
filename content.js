@@ -318,3 +318,62 @@ document.addEventListener('mouseup', (event) => {
     }
   }, 0);
 });
+
+// Listen for context menu message from background.js
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "showPopupFromContextMenu") {
+    // Use the selected text if available, otherwise prompt user
+    let text = request.selection || window.getSelection().toString().trim();
+    if (!text || text.length === 0) {
+      alert("No text selected.");
+      return;
+    }
+    selectedTextGlobal = text;
+    // Try to show the popup near the selected text
+    let x, y;
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      // If the selection is visible, use its position
+      if (rect && rect.width > 0 && rect.height > 0) {
+        x = rect.right + window.scrollX - 10;
+        y = rect.top + window.scrollY - 10;
+      }
+    }
+    // Fallback to center if selection position is not available
+    if (typeof x !== "number" || typeof y !== "number") {
+      x = window.innerWidth / 2 - 200;
+      y = window.innerHeight / 2 - 100;
+    }
+    createDetailedPopup(x, y, selectedTextGlobal, true);
+
+    // APIリクエスト
+    chrome.runtime.sendMessage(
+      { action: "translate", text: selectedTextGlobal, targetLanguage: "Japanese" },
+      (response) => {
+        if (!detailedPopup) return;
+        const loadingIndicator = detailedPopup.querySelector('#inlineLoadingIndicator');
+        const outputArea = detailedPopup.querySelector('#inlineTranslationOutput');
+        if (loadingIndicator) loadingIndicator.style.display = 'none';
+        if (!outputArea) return;
+
+        if (chrome.runtime.lastError) {
+          outputArea.textContent = 'エラー: ' + chrome.runtime.lastError.message;
+          return;
+        }
+        if (response) {
+          if (response.error) {
+            outputArea.textContent = 'エラー: ' + response.error;
+          } else if (response.translatedText) {
+            outputArea.textContent = response.translatedText;
+          } else {
+            outputArea.textContent = '翻訳結果がありません。';
+          }
+        } else {
+          outputArea.textContent = '応答がありません。';
+        }
+      }
+    );
+  }
+});

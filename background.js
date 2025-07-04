@@ -1,4 +1,21 @@
+/* global chrome */
 // background.js - OpenRouter API対応
+
+// Create context menu on install
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "translate-with-OpenRouter",
+    title: "Translate with OpenRouter",
+    contexts: ["selection", "page"]
+  });
+});
+
+// Listen for context menu click
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "translate-with-OpenRouter") {
+    chrome.tabs.sendMessage(tab.id, { action: "showPopupFromContextMenu", selection: info.selectionText });
+  }
+});
 
 async function getApiKey() {
   const result = await chrome.storage.local.get(['openrouterApiKey']);

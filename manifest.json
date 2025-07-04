@@ -5,7 +5,8 @@
   "description": "Translate selected text on the page using OpenRouter API. Configure API key in options.",
   "permissions": [
     "storage",
-    "scripting"
+    "scripting",
+    "contextMenus"
   ],
   "host_permissions": [
     "https://openrouter.ai/"
