@@ -1,5 +1,7 @@
 /* content.css */
 #openai-translator-small-icon-popup {
+  all: unset;
+  display: block; 
   position: absolute;
   z-index: 2147483647;
   cursor: pointer;
@@ -20,6 +22,8 @@
 }
 
 #openai-translator-detailed-popup {
+  all: unset;
+  display: block; 
   position: absolute;
   z-index: 2147483647;
   background-color: #0b0d0f; /* ダークモード背景 */
