@@ -1,25 +1,31 @@
 // content.js
 
 let smallIconPopup = null;
-let detailedPopup = null;
 let selectedTextGlobal = '';
-let isDragging = false;
-let dragStartX, dragStartY; // ドラッグ開始時のマウス座標
-let popupStartX, popupStartY; // ドラッグ開始時のポップアップの左上座標
-
-// リサイズ用の変数
-let isResizing = false;
-let resizeType = '';
-let startWidth, startHeight, startX, startY;
+let popupIdCounter = 0;
+// Track the active interaction (drag/resize) and the element being interacted with.
+let activeInteraction = {
+  element: null,
+  isDragging: false,
+  isResizing: false,
+  resizeType: '',
+  dragStartX: 0,
+  dragStartY: 0,
+  popupStartX: 0,
+  popupStartY: 0,
+  startWidth: 0,
+  startHeight: 0,
+  startX: 0,
+  startY: 0,
+};
 
 // デフォルトのポップアップサイズ
 const DEFAULT_POPUP_WIDTH = 400;
 const DEFAULT_POPUP_HEIGHT = 300;
 
-function removeDetailedPopup() {
-  if (detailedPopup) {
-    detailedPopup.remove();
-    detailedPopup = null;
+function removeDetailedPopup(popupElement) {
+  if (popupElement) {
+    popupElement.remove();
   }
 }
 
@@ -34,15 +40,16 @@ function removeSmallIconPopup() {
 // すべてのポップアップを削除する関数
 function removePopups() {
   removeSmallIconPopup();
-  removeDetailedPopup();
+  // Detailed popups are now removed individually
+  // removeDetailedPopup();
 }
 
 // 小さな翻訳アイコンを作成・表示する関数
 function createSmallIconPopup(x, y) {
-  removePopups(); // Remove any existing popups first
+  //removePopups(); // Remove any existing popups first
 
   smallIconPopup = document.createElement('div');
-  smallIconPopup.id = 'openai-translator-small-icon-popup';
+  smallIconPopup.id = 'openrouter-translator-small-icon-popup';
   const emojiIcon = '🌐'; // 地球儀マーク
   smallIconPopup.innerHTML = `<span class="emoji-trigger" title="翻訳する">${emojiIcon}</span>`;
 
@@ -55,20 +62,20 @@ function createSmallIconPopup(x, y) {
     if (selectedTextGlobal) {
       const iconRect = smallIconPopup.getBoundingClientRect();
       // 詳細ポップアップを先に生成してローディング表示
-      createDetailedPopup(iconRect.left + window.scrollX, iconRect.bottom + window.scrollY + 5, selectedTextGlobal, true); // isLoading = true
-      if (smallIconPopup) { // Check if smallIconPopup still exists
-        smallIconPopup.style.display = 'none'; // 小アイコンは非表示に
+      // Create the popup first and get a reference to it
+      const newDetailedPopup = createDetailedPopup(iconRect.left + window.scrollX, iconRect.bottom + window.scrollY + 5, selectedTextGlobal, true);
+      if (smallIconPopup) {
+        smallIconPopup.style.display = 'none';
       }
-
 
       // APIリクエスト
       chrome.runtime.sendMessage(
         { action: "translate", text: selectedTextGlobal, targetLanguage: "Japanese" },
         (response) => {
-          // Ensure detailedPopup and its children are still available
-          if (!detailedPopup) return;
-          const loadingIndicator = detailedPopup.querySelector('#inlineLoadingIndicator');
-          const outputArea = detailedPopup.querySelector('#inlineTranslationOutput');
+          // Use the specific popup instance we just created
+          if (!newDetailedPopup) return;
+          const loadingIndicator = newDetailedPopup.querySelector('#inlineLoadingIndicator');
+          const outputArea = newDetailedPopup.querySelector('#inlineTranslationOutput');
 
           if (loadingIndicator) loadingIndicator.style.display = 'none';
           if (!outputArea) return;
@@ -111,13 +118,16 @@ function savePopupSize(width, height) {
   });
 }
 
-// 詳細なポップアップ (翻訳結果表示のみ) を作成・表示する関数
+// A new popup is created for each translation.
 function createDetailedPopup(x, y, originalText, isLoading = false) {
-  removeDetailedPopup(); // Remove existing detailed popup first
+  // removeDetailedPopup(); // No longer remove existing popups
 
-  detailedPopup = document.createElement('div');
-  detailedPopup.id = 'openai-translator-detailed-popup';
-  detailedPopup.innerHTML = `
+  const popupElement = document.createElement('div');
+  // Use a class for styling and data-id for identification
+  popupElement.className = 'openrouter-translator-detailed-popup';
+  popupElement.dataset.popupId = `popup-translator-${popupIdCounter++}`;
+
+  popupElement.innerHTML = `
     <button class="popup-close-button" title="閉じる">&times;</button>
     <div class="translator-popup-content">
       <div id="inlineLoadingIndicator" style="display: ${isLoading ? 'block' : 'none'};">...</div>
@@ -128,150 +138,152 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
     <div class="resize-handle resize-handle-se"></div>
   `;
 
-  document.body.appendChild(detailedPopup);
-  detailedPopup.style.left = `${x}px`;
-  detailedPopup.style.top = `${y}px`;
+  document.body.appendChild(popupElement);
+  popupElement.style.left = `${x}px`;
+  popupElement.style.top = `${y}px`;
+  // Set z-index to bring new popups to the front
+  popupElement.style.zIndex = 10000 + popupIdCounter;
 
-  // 保存されたサイズを適用
+  // Apply saved size
   getSavedPopupSize((width, height) => {
-    if (detailedPopup) { // Check if popup still exists
-        detailedPopup.style.width = `${width}px`;
-        detailedPopup.style.height = `${height}px`;
-    }
+    popupElement.style.width = `${width}px`;
+    popupElement.style.height = `${height}px`;
   });
 
-  const dragHandle = detailedPopup; // Pop-up itself is the drag handle
+  // Setup all interaction event listeners for this specific popup
+  setupPopupInteractions(popupElement);
+
+  return popupElement; // Return the new element so it can be updated with content
+}
+
+// Sets up dragging, closing, and resizing for a specific popup element.
+function setupPopupInteractions(popupElement) {
+  const dragHandle = popupElement;
+
+  // Bring popup to front when clicked
+  popupElement.addEventListener('mousedown', (e) => {
+    popupElement.style.zIndex = 10000 + popupIdCounter++;
+  }, true);
 
   dragHandle.addEventListener('mousedown', (e) => {
-    // テキスト選択や他の要素のクリックイベントと競合しないように
-    // Allow dragging unless clicking on button, output area, or resize handles
     if (e.target.closest('button, .translation-output, .resize-handle, .popup-close-button')) {
-        return;
+      return;
     }
-    e.preventDefault(); // テキスト選択などを防ぐ
+    e.preventDefault();
 
-    isDragging = true;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-    popupStartX = detailedPopup.offsetLeft;
-    popupStartY = detailedPopup.offsetTop;
+    activeInteraction.isDragging = true;
+    activeInteraction.element = popupElement;
+    activeInteraction.dragStartX = e.clientX;
+    activeInteraction.dragStartY = e.clientY;
+    activeInteraction.popupStartX = popupElement.offsetLeft;
+    activeInteraction.popupStartY = popupElement.offsetTop;
 
-    detailedPopup.style.userSelect = 'none';
+    popupElement.style.userSelect = 'none';
   });
 
-  // Prevent click event on popup from propagating to document mousedown listener
-  detailedPopup.addEventListener('mousedown', (event) => {
-    event.stopPropagation();
-  });
-
-  // Add event listener for the close button
-  const closeButton = detailedPopup.querySelector('.popup-close-button');
+  const closeButton = popupElement.querySelector('.popup-close-button');
   if (closeButton) {
     closeButton.addEventListener('click', (e) => {
-      e.stopPropagation(); // Prevent other listeners
-      removeDetailedPopup();
+      e.stopPropagation();
+      removeDetailedPopup(popupElement);
     });
   }
-  
-  setupResizeHandlers();
+
+  setupResizeHandlers(popupElement);
 }
 
-// リサイズハンドラーをセットアップする関数
-function setupResizeHandlers() {
-  if (!detailedPopup) return;
-  
-  const eastResize = detailedPopup.querySelector('.resize-handle-e');
-  const southResize = detailedPopup.querySelector('.resize-handle-s');
-  const southEastResize = detailedPopup.querySelector('.resize-handle-se');
-  
-  if (!eastResize || !southResize || !southEastResize) return; // Ensure handles exist
 
-  eastResize.addEventListener('mousedown', (e) => {
+// Sets up resize handlers for a specific popup element.
+function setupResizeHandlers(popupElement) {
+  const eastResize = popupElement.querySelector('.resize-handle-e');
+  const southResize = popupElement.querySelector('.resize-handle-s');
+  const southEastResize = popupElement.querySelector('.resize-handle-se');
+
+  if (!eastResize || !southResize || !southEastResize) return;
+
+  const startResize = (e, type) => {
     e.preventDefault();
     e.stopPropagation();
-    isResizing = true;
-    resizeType = 'e';
-    startX = e.clientX;
-    if (detailedPopup) startWidth = detailedPopup.offsetWidth; // Check detailedPopup
-    document.body.style.cursor = 'e-resize';
-  });
-  
-  southResize.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    isResizing = true;
-    resizeType = 's';
-    startY = e.clientY;
-    if (detailedPopup) startHeight = detailedPopup.offsetHeight; // Check detailedPopup
-    document.body.style.cursor = 's-resize';
-  });
-  
-  southEastResize.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    isResizing = true;
-    resizeType = 'se';
-    startX = e.clientX;
-    startY = e.clientY;
-    if (detailedPopup) { // Check detailedPopup
-        startWidth = detailedPopup.offsetWidth;
-        startHeight = detailedPopup.offsetHeight;
-    }
-    document.body.style.cursor = 'se-resize';
-  });
+
+    activeInteraction.isResizing = true;
+    activeInteraction.resizeType = type;
+    activeInteraction.element = popupElement;
+    activeInteraction.startX = e.clientX;
+    activeInteraction.startY = e.clientY;
+    activeInteraction.startWidth = popupElement.offsetWidth;
+    activeInteraction.startHeight = popupElement.offsetHeight;
+    document.body.style.cursor = `${type}-resize`;
+  };
+
+  eastResize.addEventListener('mousedown', (e) => startResize(e, 'e'));
+  southResize.addEventListener('mousedown', (e) => startResize(e, 's'));
+  southEastResize.addEventListener('mousedown', (e) => startResize(e, 'se'));
 }
 
+// Global mouse move handler for dragging and resizing.
 document.addEventListener('mousemove', (e) => {
-  if (isDragging && detailedPopup) {
-    const dx = e.clientX - dragStartX;
-    const dy = e.clientY - dragStartY;
-    detailedPopup.style.left = `${popupStartX + dx}px`;
-    detailedPopup.style.top = `${popupStartY + dy}px`;
+  if (!activeInteraction.element) return;
+
+  if (activeInteraction.isDragging) {
+    const dx = e.clientX - activeInteraction.dragStartX;
+    const dy = e.clientY - activeInteraction.dragStartY;
+    activeInteraction.element.style.left = `${activeInteraction.popupStartX + dx}px`;
+    activeInteraction.element.style.top = `${activeInteraction.popupStartY + dy}px`;
   }
-  
-  if (isResizing && detailedPopup) {
-    if (resizeType === 'e' || resizeType === 'se') {
-      const width = startWidth + (e.clientX - startX);
+
+  if (activeInteraction.isResizing) {
+    if (activeInteraction.resizeType.includes('e')) {
+      const width = activeInteraction.startWidth + (e.clientX - activeInteraction.startX);
       if (width >= 200) {
-        detailedPopup.style.width = `${width}px`;
+        activeInteraction.element.style.width = `${width}px`;
       }
     }
-    
-    if (resizeType === 's' || resizeType === 'se') {
-      const height = startHeight + (e.clientY - startY);
+    if (activeInteraction.resizeType.includes('s')) {
+      const height = activeInteraction.startHeight + (e.clientY - activeInteraction.startY);
       if (height >= 100) {
-        detailedPopup.style.height = `${height}px`;
+        activeInteraction.element.style.height = `${height}px`;
       }
     }
   }
 });
 
-document.addEventListener('mouseup', (e) => {
-  if (isDragging) {
-    isDragging = false;
-    if (detailedPopup) {
-        detailedPopup.style.userSelect = 'auto';
-    }
+// Global mouse up handler to end interactions.
+document.addEventListener('mouseup', () => {
+  if (!activeInteraction.element) return;
+
+  if (activeInteraction.isDragging) {
+    activeInteraction.element.style.userSelect = 'auto';
   }
-  
-  if (isResizing) {
-    isResizing = false;
-    resizeType = '';
+
+  if (activeInteraction.isResizing) {
     document.body.style.cursor = 'default';
-    
-    if (detailedPopup) {
-      const width = detailedPopup.offsetWidth;
-      const height = detailedPopup.offsetHeight;
-      savePopupSize(width, height);
-    }
+    const width = activeInteraction.element.offsetWidth;
+    const height = activeInteraction.element.offsetHeight;
+    savePopupSize(width, height); // Saves size for future popups
   }
+
+  // Reset interaction state
+  activeInteraction = {
+    element: null,
+    isDragging: false,
+    isResizing: false,
+    resizeType: '',
+    dragStartX: 0,
+    dragStartY: 0,
+    popupStartX: 0,
+    popupStartY: 0,
+    startWidth: 0,
+    startHeight: 0,
+    startX: 0,
+    startY: 0,
+  };
 });
 
 // Modified mousedown listener to handle popup dismissal
 document.addEventListener('mousedown', (event) => {
   // If the click is on or inside the detailedPopup, do nothing.
-  // The detailedPopup is only closed by its own close button.
-  if (detailedPopup && detailedPopup.contains(event.target)) {
+  // If the click is on or inside any of the detailed popups, do nothing.
+  if (event.target.closest('.openrouter-translator-detailed-popup')) {
     return;
   }
 
@@ -288,7 +300,7 @@ document.addEventListener('mousedown', (event) => {
 
 document.addEventListener('mouseup', (event) => {
   // If the mouseup event is inside the detailed popup, let its own handlers (drag, resize, close) manage it.
-  if (detailedPopup && detailedPopup.contains(event.target)) {
+  if (event.target.closest('.openrouter-translator-detailed-popup')) {
     return;
   }
   // If the mouseup event is inside the small icon popup, let its click handler manage it.
@@ -306,15 +318,17 @@ document.addEventListener('mouseup', (event) => {
 
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      
+
       // Only remove popups if we are about to create a new small icon.
       // This prevents closing the detailed popup if text is selected elsewhere while it's open.
-      removePopups(); // Clear previous popups before creating a new one
+
+      //removePopups(); // Clear previous popups before creating a new one
+
       createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
     } else {
-        // If no text is selected, and the click was outside any popups (handled by document mousedown),
-        // the smallIconPopup would have been removed by the mousedown listener.
-        // No explicit action needed here for detailedPopup as it persists.
+      // If no text is selected, and the click was outside any popups (handled by document mousedown),
+      // the smallIconPopup would have been removed by the mousedown listener.
+      // No explicit action needed here for detailedPopup as it persists.
     }
   }, 0);
 });
@@ -346,15 +360,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       x = window.innerWidth / 2 - 200;
       y = window.innerHeight / 2 - 100;
     }
-    createDetailedPopup(x, y, selectedTextGlobal, true);
+    const newDetailedPopup = createDetailedPopup(x, y, selectedTextGlobal, true);
 
     // APIリクエスト
     chrome.runtime.sendMessage(
       { action: "translate", text: selectedTextGlobal, targetLanguage: "Japanese" },
       (response) => {
-        if (!detailedPopup) return;
-        const loadingIndicator = detailedPopup.querySelector('#inlineLoadingIndicator');
-        const outputArea = detailedPopup.querySelector('#inlineTranslationOutput');
+        if (!newDetailedPopup) return;
+        const loadingIndicator = newDetailedPopup.querySelector('#inlineLoadingIndicator');
+        const outputArea = newDetailedPopup.querySelector('#inlineTranslationOutput');
         if (loadingIndicator) loadingIndicator.style.display = 'none';
         if (!outputArea) return;
 
