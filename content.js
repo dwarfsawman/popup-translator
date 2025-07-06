@@ -18,6 +18,17 @@ let activeInteraction = {
   startX: 0,
   startY: 0,
 };
+// Helper function to normalize coordinates for mouse and touch events
+function getEventCoords(e) {
+  if (e.touches && e.touches.length > 0) {
+    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }
+  if (e.changedTouches && e.changedTouches.length > 0) {
+    // For touchend
+    return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+  }
+  return { x: e.clientX, y: e.clientY };
+}
 
 // デフォルトのポップアップサイズ
 const DEFAULT_POPUP_WIDTH = 400;
@@ -160,26 +171,30 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
 function setupPopupInteractions(popupElement) {
   const dragHandle = popupElement;
 
-  // Bring popup to front when clicked
-  popupElement.addEventListener('mousedown', (e) => {
+  // Bring popup to front when clicked or tapped
+  const bringToFront = () => {
     popupElement.style.zIndex = 10000 + popupIdCounter++;
-  }, true);
+  };
+  popupElement.addEventListener('mousedown', bringToFront, true);
+  popupElement.addEventListener('touchstart', bringToFront, { passive: true, capture: true });
 
-  dragHandle.addEventListener('mousedown', (e) => {
+  const startDrag = (e) => {
     if (e.target.closest('button, .translation-output, .resize-handle, .popup-close-button')) {
       return;
     }
     e.preventDefault();
-
+    const { x, y } = getEventCoords(e);
     activeInteraction.isDragging = true;
     activeInteraction.element = popupElement;
-    activeInteraction.dragStartX = e.clientX;
-    activeInteraction.dragStartY = e.clientY;
+    activeInteraction.dragStartX = x;
+    activeInteraction.dragStartY = y;
     activeInteraction.popupStartX = popupElement.offsetLeft;
     activeInteraction.popupStartY = popupElement.offsetTop;
 
     popupElement.style.userSelect = 'none';
-  });
+  };
+  dragHandle.addEventListener('mousedown', startDrag, { passive: false });
+  dragHandle.addEventListener('touchstart', startDrag, { passive: false });
 
   const closeButton = popupElement.querySelector('.popup-close-button');
   if (closeButton) {
@@ -204,12 +219,13 @@ function setupResizeHandlers(popupElement) {
   const startResize = (e, type) => {
     e.preventDefault();
     e.stopPropagation();
+    const { x, y } = getEventCoords(e);
 
     activeInteraction.isResizing = true;
     activeInteraction.resizeType = type;
     activeInteraction.element = popupElement;
-    activeInteraction.startX = e.clientX;
-    activeInteraction.startY = e.clientY;
+    activeInteraction.startX = x;
+    activeInteraction.startY = y;
     activeInteraction.startWidth = popupElement.offsetWidth;
     activeInteraction.startHeight = popupElement.offsetHeight;
     document.body.style.cursor = `${type}-resize`;
@@ -218,37 +234,45 @@ function setupResizeHandlers(popupElement) {
   eastResize.addEventListener('mousedown', (e) => startResize(e, 'e'));
   southResize.addEventListener('mousedown', (e) => startResize(e, 's'));
   southEastResize.addEventListener('mousedown', (e) => startResize(e, 'se'));
+
+  // Touch support
+  eastResize.addEventListener('touchstart', (e) => startResize(e, 'e'), { passive: false });
+  southResize.addEventListener('touchstart', (e) => startResize(e, 's'), { passive: false });
+  southEastResize.addEventListener('touchstart', (e) => startResize(e, 'se'), { passive: false });
 }
 
-// Global mouse move handler for dragging and resizing.
-document.addEventListener('mousemove', (e) => {
+// Global move handler for dragging and resizing (mouse & touch).
+const handlePointerMove = (e) => {
   if (!activeInteraction.element) return;
+  const { x, y } = getEventCoords(e);
 
   if (activeInteraction.isDragging) {
-    const dx = e.clientX - activeInteraction.dragStartX;
-    const dy = e.clientY - activeInteraction.dragStartY;
+    const dx = x - activeInteraction.dragStartX;
+    const dy = y - activeInteraction.dragStartY;
     activeInteraction.element.style.left = `${activeInteraction.popupStartX + dx}px`;
     activeInteraction.element.style.top = `${activeInteraction.popupStartY + dy}px`;
   }
 
   if (activeInteraction.isResizing) {
     if (activeInteraction.resizeType.includes('e')) {
-      const width = activeInteraction.startWidth + (e.clientX - activeInteraction.startX);
+      const width = activeInteraction.startWidth + (x - activeInteraction.startX);
       if (width >= 200) {
         activeInteraction.element.style.width = `${width}px`;
       }
     }
     if (activeInteraction.resizeType.includes('s')) {
-      const height = activeInteraction.startHeight + (e.clientY - activeInteraction.startY);
+      const height = activeInteraction.startHeight + (y - activeInteraction.startY);
       if (height >= 100) {
         activeInteraction.element.style.height = `${height}px`;
       }
     }
   }
-});
+};
+document.addEventListener('mousemove', handlePointerMove, { passive: false });
+document.addEventListener('touchmove', handlePointerMove, { passive: false });
 
-// Global mouse up handler to end interactions.
-document.addEventListener('mouseup', () => {
+// Global pointer up handler to end interactions.
+const handlePointerUp = () => {
   if (!activeInteraction.element) return;
 
   if (activeInteraction.isDragging) {
@@ -277,33 +301,34 @@ document.addEventListener('mouseup', () => {
     startX: 0,
     startY: 0,
   };
-});
+};
+document.addEventListener('mouseup', handlePointerUp);
+document.addEventListener('touchend', handlePointerUp);
 
-// Modified mousedown listener to handle popup dismissal
-document.addEventListener('mousedown', (event) => {
-  // If the click is on or inside the detailedPopup, do nothing.
-  // If the click is on or inside any of the detailed popups, do nothing.
+// Pointer start listener to handle popup dismissal
+const handlePointerStart = (event) => {
+  // If the tap/click is on or inside the detailedPopup, do nothing.
   if (event.target.closest('.openrouter-translator-detailed-popup')) {
     return;
   }
 
-  // If the click is on or inside the smallIconPopup, do nothing.
-  // Its own click handler will manage its behavior.
+  // If the tap/click is on or inside the smallIconPopup, do nothing.
   if (smallIconPopup && smallIconPopup.contains(event.target)) {
     return;
   }
 
-  // If the click is outside both popups, remove the smallIconPopup.
-  // The detailedPopup remains, as per the requirement.
+  // If the tap/click is outside both popups, remove the smallIconPopup.
   removeSmallIconPopup();
-});
+};
+document.addEventListener('mousedown', handlePointerStart);
+document.addEventListener('touchstart', handlePointerStart);
 
-document.addEventListener('mouseup', (event) => {
-  // If the mouseup event is inside the detailed popup, let its own handlers (drag, resize, close) manage it.
+const handleSelectionEnd = (event) => {
+  // If the event is inside the detailed popup, let its own handlers manage it.
   if (event.target.closest('.openrouter-translator-detailed-popup')) {
     return;
   }
-  // If the mouseup event is inside the small icon popup, let its click handler manage it.
+  // If the event is inside the small icon popup, let its click handler manage it.
   if (smallIconPopup && smallIconPopup.contains(event.target)) {
     return;
   }
@@ -319,19 +344,12 @@ document.addEventListener('mouseup', (event) => {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
 
-      // Only remove popups if we are about to create a new small icon.
-      // This prevents closing the detailed popup if text is selected elsewhere while it's open.
-
-      //removePopups(); // Clear previous popups before creating a new one
-
       createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
-    } else {
-      // If no text is selected, and the click was outside any popups (handled by document mousedown),
-      // the smallIconPopup would have been removed by the mousedown listener.
-      // No explicit action needed here for detailedPopup as it persists.
     }
   }, 0);
-});
+};
+document.addEventListener('mouseup', handleSelectionEnd);
+document.addEventListener('touchend', handleSelectionEnd);
 
 // Listen for context menu message from background.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

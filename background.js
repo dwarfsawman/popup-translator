@@ -61,7 +61,7 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
         'X-Title': 'OpenRouter Translator Extension'
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.5-pro",
         messages: [
           {
             role: "system",
@@ -120,8 +120,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   } else if (request.action === "getApiKey") {
     (async () => {
-        const apiKey = await getApiKey();
-        sendResponse({ apiKey: apiKey });
+      const apiKey = await getApiKey();
+      sendResponse({ apiKey: apiKey });
     })();
     return true;
   }
