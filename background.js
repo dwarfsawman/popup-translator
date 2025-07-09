@@ -36,7 +36,7 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
   let systemPrompt;
   switch (targetLanguage) {
     case 'Japanese':
-      systemPrompt = '以下の文章を日本語訳してください。なるべく直訳は避け自然な日本語にしてください。';
+      systemPrompt = '以下の文章を日本語訳してください。なるべく直訳は避け自然な日本語にしてください。訳文のみを出力してください。';
       break;
     case 'English':
       systemPrompt = 'Please translate the following text to English. Make it natural and avoid literal translation.';
@@ -61,7 +61,7 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
         'X-Title': 'OpenRouter Translator Extension'
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
+        model: "google/gemini-2.5-flash",
         messages: [
           {
             role: "system",
