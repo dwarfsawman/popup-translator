@@ -1,0 +1,81 @@
+    mo.observe(document.documentElement || document, { childList: true, subtree: true });
+    // Periodic safety scan (handles virtualized re-renders)
+    setInterval(() => scanIframesIn(document), 1500);
+  }
+
+  function collectAccessibleIframes() {
+    const result = [];
+    const tryAdd = (f) => {
+      try {
+        const doc = f.contentDocument;
+        const win = f.contentWindow;
+        if (doc && win) {
+          void doc.documentElement; // access test
+          result.push(f);
+        }
+      } catch (_) { /* cross-origin */ }
+    };
+    // Top-level iframes
+    document.querySelectorAll('iframe').forEach(tryAdd);
+    // Open shadow roots
+    const all = document.querySelectorAll('*');
+    all.forEach((el) => {
+      if (el.shadowRoot) {
+        try { el.shadowRoot.querySelectorAll('iframe').forEach(tryAdd); } catch (_) {}
+      }
+    });
+    return result;
+  }
+
+  function findSelectionInAnyFrame() {
+    const frames = collectAccessibleIframes();
+    for (const f of frames) {
+      const info = getSelectionRectFrom(f.contentWindow);
+      if (info) {
+        const frameRect = f.getBoundingClientRect();
+        const x = window.scrollX + frameRect.left + info.rect.right - 10;
+        const y = window.scrollY + frameRect.top + info.rect.top - 10;
+        return { text: info.text, x, y };
+      }
+    }
+    return null;
+  }
+
+  function setupPopupInteractions(popupElement) {
+    const bringToFront = () => {
+      popupElement.style.zIndex = 10000 + popupIdCounter++;
+    };
+    popupElement.addEventListener('mousedown', bringToFront, true);
+    popupElement.addEventListener('touchstart', bringToFront, { passive: true, capture: true });
+
+    const startDrag = (e) => {
+      // Drag only from dedicated handle to avoid conflicts with content selection
+      if (!e.target.closest('.popup-drag-handle')) return;
+      e.preventDefault();
+      const { x, y } = getEventCoords(e);
+      activeInteraction.isDragging = true;
+      activeInteraction.element = popupElement;
+      activeInteraction.dragStartX = x;
+      activeInteraction.dragStartY = y;
+      activeInteraction.popupStartX = popupElement.offsetLeft;
+      activeInteraction.popupStartY = popupElement.offsetTop;
+      popupElement.style.userSelect = 'none';
+    };
+    const dragHandle = popupElement.querySelector('.popup-drag-handle') || popupElement;
+    dragHandle.addEventListener('mousedown', startDrag, { passive: false });
+    dragHandle.addEventListener('touchstart', startDrag, { passive: false });
+
+    const closeButton = popupElement.querySelector('.popup-close-button');
+    if (closeButton) {
+      closeButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeDetailedPopup(popupElement);
+      });
+    }
+
+    setupResizeHandlers(popupElement);
+  }
+
+  function setupResizeHandlers(popupElement) {
+    const eastResize = popupElement.querySelector('.resize-handle-e');
+    const westResize = popupElement.querySelector('.resize-handle-w');
