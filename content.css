@@ -17,6 +17,13 @@
   line-height: 1;
 }
 
+@media (max-width: 480px) {
+  #openrouter-translator-small-icon-popup {
+    font-size: 18px;
+    padding: 6px 8px;
+  }
+}
+
 #openrouter-translator-small-icon-popup .emoji-trigger {
   /* 絵文字特有の調整があればここに */
 }
@@ -32,11 +39,14 @@
   border-radius: 8px;
   padding: 15px; /* Ensure padding for close button positioning */
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  font-family: sans-serif;
+  font-family: "Noto Sans JP", sans-serif !important;
   font-size: 14px;
-  width: 400px; /* 初期幅 */
+  /* 固定幅を廃止し、ビューポート幅に収める */
+  width: min(400px, 95vw); /* 初期推奨幅だが画面に合わせて縮む */
+  max-width: 95vw; /* 保存された幅が大きくてもはみ出さない */
   min-width: 200px; /* 最小幅 */
   min-height: 100px; /* 最小高さ */
+  max-height: 90vh; /* 画面が低い場合に収める */
   box-sizing: border-box;
   display: flex; /* Added to help with content layout if needed, but primarily for structure */
   flex-direction: column; /* Content flows downwards */
@@ -99,6 +109,8 @@
   flex-direction: column;
   flex-grow: 1; /* Allow content to take available space */
   overflow: hidden; /* Prevent content from overflowing popup boundaries before scroll kicks in */
+  /* 小さい画面で子要素のスクロールが効くようにする */
+  min-height: 0;
   margin-top: 15px; /* Add some space below the potential close button area */
 }
 
@@ -153,7 +165,8 @@
   overflow-wrap: break-word;
   white-space: pre-wrap;
   font-size: 0.95em;
-  max-height: 400px;
+  /* 画面が低い場合にも収まるように上限を可変に */
+  max-height: min(400px, 60vh);
   overflow-y: auto;
   flex-grow: 1; /* Allow output to take available vertical space */
 

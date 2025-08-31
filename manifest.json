@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OpenRouter Inline Translator",
-  "version": "1.4",
+  "version": "1.6",
   "description": "Translate selected text on the page using OpenRouter API. Configure API key in options.",
   "permissions": ["storage", "scripting", "contextMenus"],
   "host_permissions": ["https://openrouter.ai/"],

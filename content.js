@@ -57,7 +57,8 @@ function removePopups() {
 
 // 小さな翻訳アイコンを作成・表示する関数
 function createSmallIconPopup(x, y) {
-  //removePopups(); // Remove any existing popups first
+  // 既存の小アイコンがあれば置き換える（重複表示を避ける）
+  removeSmallIconPopup();
 
   smallIconPopup = document.createElement('div');
   smallIconPopup.id = 'openrouter-translator-small-icon-popup';
@@ -67,6 +68,17 @@ function createSmallIconPopup(x, y) {
   document.body.appendChild(smallIconPopup);
   smallIconPopup.style.left = `${x}px`;
   smallIconPopup.style.top = `${y}px`;
+
+  // モバイル等の狭い画面でアイコンが画面外に出ないようにクランプ
+  const margin = 6;
+  const usedWidth = smallIconPopup.offsetWidth;
+  const usedHeight = smallIconPopup.offsetHeight;
+  const maxLeft = window.scrollX + window.innerWidth - usedWidth - margin;
+  const maxTop = window.scrollY + window.innerHeight - usedHeight - margin;
+  const clampedLeft = Math.max(window.scrollX + margin, Math.min(x, maxLeft));
+  const clampedTop = Math.max(window.scrollY + margin, Math.min(y, maxTop));
+  smallIconPopup.style.left = `${clampedLeft}px`;
+  smallIconPopup.style.top = `${clampedTop}px`;
 
   smallIconPopup.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -159,6 +171,18 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
   getSavedPopupSize((width, height) => {
     popupElement.style.width = `${width}px`;
     popupElement.style.height = `${height}px`;
+
+    // 幅・高さ反映後に、ポップアップ位置をビューポート内にクランプ
+    // max-width/max-height により実際の表示サイズは縮む可能性があるため、offsetWidth/offsetHeight を使用
+    const margin = 8; // 画面端からの最小余白
+    const usedWidth = popupElement.offsetWidth;
+    const usedHeight = popupElement.offsetHeight;
+    const maxLeft = window.scrollX + window.innerWidth - usedWidth - margin;
+    const maxTop = window.scrollY + window.innerHeight - usedHeight - margin;
+    const clampedLeft = Math.max(window.scrollX + margin, Math.min(x, maxLeft));
+    const clampedTop = Math.max(window.scrollY + margin, Math.min(y, maxTop));
+    popupElement.style.left = `${clampedLeft}px`;
+    popupElement.style.top = `${clampedTop}px`;
   });
 
   // Setup all interaction event listeners for this specific popup
@@ -350,6 +374,27 @@ const handleSelectionEnd = (event) => {
 };
 document.addEventListener('mouseup', handleSelectionEnd);
 document.addEventListener('touchend', handleSelectionEnd);
+
+// Android等で long-press 選択時に touchend が届かない場合に備え、selectionchange でも補足
+let selectionChangeTimer = null;
+document.addEventListener('selectionchange', () => {
+  if (selectionChangeTimer) clearTimeout(selectionChangeTimer);
+  selectionChangeTimer = setTimeout(() => {
+    const text = window.getSelection().toString().trim();
+    if (!text) return;
+    // ポップアップ上の操作による selection には反応しない
+    const activeEl = document.activeElement;
+    if (activeEl && activeEl.closest && activeEl.closest('.openrouter-translator-detailed-popup')) return;
+
+    selectedTextGlobal = text;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return;
+    createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
+  }, 80);
+});
 
 // Listen for context menu message from background.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

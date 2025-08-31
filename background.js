@@ -36,19 +36,19 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
   let systemPrompt;
   switch (targetLanguage) {
     case 'Japanese':
-      systemPrompt = '以下の文章を日本語訳してください。なるべく直訳は避け自然な日本語にしてください。訳文のみを出力してください。';
+      systemPrompt = '以下の文章を日本語訳してください。なるべく直訳は避け自然な日本語にしてください。前置きや説明は省き、翻訳結果だけを出力してください。';
       break;
     case 'English':
-      systemPrompt = 'Please translate the following text to English. Make it natural and avoid literal translation.';
+      systemPrompt = 'Please translate the following text to English. Make it natural and avoid literal translation. Output only the translation without any preamble or explanation.';
       break;
     case 'Korean':
-      systemPrompt = '다음 문장을 한국어로 번역해주세요. 직역보다는 자연스러운 한국어로 번역해주세요.';
+      systemPrompt = '다음 문장을 한국어로 번역해주세요. 직역보다는 자연스러운 한국어로 번역해주세요. 전제나 설명 없이 번역 결과만 출력해주세요.';
       break;
     case 'Chinese':
-      systemPrompt = '请将以下文本翻译成中文。请避免直译，使用自然的中文表达。';
+      systemPrompt = '请将以下文本翻译成中文。请避免直译，使用自然的中文表达。 只输出翻译结果，不要任何前言或解释。';
       break;
     default:
-      systemPrompt = `Please translate the following text to ${targetLanguage}. Make it natural and avoid literal translation.`;
+      systemPrompt = `Please translate the following text to ${targetLanguage}. Make it natural and avoid literal translation. Output only the translation without any preamble or explanation.`;
   }
 
   try {
@@ -61,7 +61,7 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
         'X-Title': 'OpenRouter Translator Extension'
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "openai/gpt-4.1",
         messages: [
           {
             role: "system",
@@ -73,7 +73,7 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
           }
         ],
         max_tokens: 4000,
-        temperature: 0.3
+        temperature: 0.7
       })
     });
 
