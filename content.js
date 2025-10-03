@@ -3,6 +3,7 @@
 let smallIconPopup = null;
 let selectedTextGlobal = '';
 let popupIdCounter = 0;
+let isPointerDown = false;
 // Track the active interaction (drag/resize) and the element being interacted with.
 let activeInteraction = {
   element: null,
@@ -297,6 +298,7 @@ document.addEventListener('touchmove', handlePointerMove, { passive: false });
 
 // Global pointer up handler to end interactions.
 const handlePointerUp = () => {
+  isPointerDown = false;
   if (!activeInteraction.element) return;
 
   if (activeInteraction.isDragging) {
@@ -328,9 +330,20 @@ const handlePointerUp = () => {
 };
 document.addEventListener('mouseup', handlePointerUp);
 document.addEventListener('touchend', handlePointerUp);
+document.addEventListener('touchcancel', () => {
+  isPointerDown = false;
+});
 
 // Pointer start listener to handle popup dismissal
 const handlePointerStart = (event) => {
+  if (event.type === 'mousedown') {
+    if (event.button === 0) {
+      isPointerDown = true;
+    }
+  } else {
+    isPointerDown = true;
+  }
+
   // If the tap/click is on or inside the detailedPopup, do nothing.
   if (event.target.closest('.openrouter-translator-detailed-popup')) {
     return;
@@ -378,11 +391,19 @@ document.addEventListener('touchend', handleSelectionEnd);
 // Android等で long-press 選択時に touchend が届かない場合に備え、selectionchange でも補足
 let selectionChangeTimer = null;
 document.addEventListener('selectionchange', () => {
-  if (selectionChangeTimer) clearTimeout(selectionChangeTimer);
+  if (selectionChangeTimer) {
+    clearTimeout(selectionChangeTimer);
+    selectionChangeTimer = null;
+  }
+
+  if (isPointerDown) {
+    return;
+  }
+
   selectionChangeTimer = setTimeout(() => {
     const text = window.getSelection().toString().trim();
     if (!text) return;
-    // ポップアップ上の操作による selection には反応しない
+    // �|�b�v�A�b�v��̑���ɂ�� selection �ɂ͔������Ȃ�
     const activeEl = document.activeElement;
     if (activeEl && activeEl.closest && activeEl.closest('.openrouter-translator-detailed-popup')) return;
 
@@ -454,3 +475,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     );
   }
 });
+
