@@ -37,6 +37,7 @@
   let smallIconPopup = null;
   let selectedTextGlobal = '';
   let popupIdCounter = 0;
+  let isPointerDown = false;
   let activeInteraction = {
     element: null,
     isDragging: false,
@@ -577,6 +578,7 @@
   };
 
   const handlePointerUp = () => {
+    isPointerDown = false;
     if (!activeInteraction.element) return;
     if (activeInteraction.isDragging) {
       activeInteraction.element.style.userSelect = 'auto';
@@ -604,6 +606,13 @@
   };
 
   const handlePointerStart = (event) => {
+    if (event.type === 'mousedown') {
+      if (event.button === 0) {
+        isPointerDown = true;
+      }
+    } else {
+      isPointerDown = true;
+    }
     if (event.target.closest('.openrouter-translator-detailed-popup')) return;
     if (smallIconPopup && smallIconPopup.contains(event.target)) return;
     removeSmallIconPopup();
@@ -627,7 +636,13 @@
 
   let selectionChangeTimer = null;
   function onSelectionChange() {
-    if (selectionChangeTimer) clearTimeout(selectionChangeTimer);
+    if (selectionChangeTimer) {
+      clearTimeout(selectionChangeTimer);
+      selectionChangeTimer = null;
+    }
+    if (isPointerDown) {
+      return;
+    }
     selectionChangeTimer = setTimeout(() => {
       const text = window.getSelection().toString().trim();
       if (!text) return;
@@ -911,6 +926,7 @@
   document.addEventListener('touchmove', handlePointerMove, { passive: false });
   document.addEventListener('mouseup', handlePointerUp);
   document.addEventListener('touchend', handlePointerUp);
+  document.addEventListener('touchcancel', () => { isPointerDown = false; });
   document.addEventListener('mousedown', handlePointerStart);
   document.addEventListener('touchstart', handlePointerStart);
   document.addEventListener('mouseup', onSelectionEnd);
