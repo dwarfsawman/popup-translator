@@ -61,13 +61,10 @@ function createSmallIconPopup(x, y) {
   // 既存の小アイコンがあれば置き換える（重複表示を避ける）
   removeSmallIconPopup();
 
-  smallIconPopup = document.createElement('button');
-  smallIconPopup.type = 'button';
+  smallIconPopup = document.createElement('div');
   smallIconPopup.id = 'openrouter-translator-small-icon-popup';
-  smallIconPopup.setAttribute('aria-label', '翻訳する');
-  smallIconPopup.title = '翻訳する';
   const emojiIcon = '🌐'; // 地球儀マーク
-  smallIconPopup.innerHTML = `<span class="emoji-trigger" aria-hidden="true">${emojiIcon}</span>`;
+  smallIconPopup.innerHTML = `<span class="emoji-trigger" title="翻訳する">${emojiIcon}</span>`;
 
   document.body.appendChild(smallIconPopup);
   smallIconPopup.style.left = `${x}px`;
@@ -233,27 +230,6 @@ function setupPopupInteractions(popupElement) {
   }
 
   setupResizeHandlers(popupElement);
-
-  const handleWheel = (event) => {
-    const scrollableArea = event.target.closest('.translation-output');
-    if (scrollableArea) {
-      event.stopPropagation();
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const handleTouchMove = (event) => {
-    const scrollableArea = event.target.closest('.translation-output');
-    if (!scrollableArea) {
-      event.preventDefault();
-    }
-    event.stopPropagation();
-  };
-
-  popupElement.addEventListener('wheel', handleWheel, { passive: false });
-  popupElement.addEventListener('touchmove', handleTouchMove, { passive: false });
 }
 
 
