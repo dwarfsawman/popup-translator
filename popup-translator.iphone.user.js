@@ -74,6 +74,99 @@
     return { x: e.clientX, y: e.clientY };
   }
 
+  function getRangeDisplayRect(range) {
+    if (!range) return null;
+    try {
+      const rect = range.getBoundingClientRect();
+      if (rect && (rect.width > 0 || rect.height > 0)) return rect;
+    } catch (_) {}
+    if (typeof range.getClientRects === 'function') {
+      const rects = Array.from(range.getClientRects());
+      for (const rect of rects) {
+        if (rect && (rect.width > 0 || rect.height > 0)) return rect;
+      }
+    }
+    return null;
+  }
+
+  function getViewportMetrics() {
+    const docEl = document.documentElement;
+    if (window.visualViewport) {
+      const vv = window.visualViewport;
+      const widthCandidate = vv.width || window.innerWidth || (docEl && docEl.clientWidth) || (typeof screen !== 'undefined' ? screen.width : 0);
+      const heightCandidate = vv.height || window.innerHeight || (docEl && docEl.clientHeight) || (typeof screen !== 'undefined' ? screen.height : 0);
+      const pageLeft = typeof vv.pageLeft === 'number' ? vv.pageLeft : (window.scrollX || 0);
+      const pageTop = typeof vv.pageTop === 'number' ? vv.pageTop : (window.scrollY || 0);
+      return {
+        width: widthCandidate > 0 ? widthCandidate : DEFAULT_POPUP_WIDTH,
+        height: heightCandidate > 0 ? heightCandidate : DEFAULT_POPUP_HEIGHT,
+        left: pageLeft + (vv.offsetLeft || 0),
+        top: pageTop + (vv.offsetTop || 0),
+      };
+    }
+    const rawWidth = window.innerWidth || (docEl && docEl.clientWidth) || (typeof screen !== 'undefined' ? screen.width : 0);
+    const rawHeight = window.innerHeight || (docEl && docEl.clientHeight) || (typeof screen !== 'undefined' ? screen.height : 0);
+    return {
+      width: rawWidth > 0 ? rawWidth : DEFAULT_POPUP_WIDTH,
+      height: rawHeight > 0 ? rawHeight : DEFAULT_POPUP_HEIGHT,
+      left: window.scrollX || (docEl && docEl.scrollLeft) || 0,
+      top: window.scrollY || (docEl && docEl.scrollTop) || 0,
+    };
+  }
+
+  function clientRectToPageRect(rect) {
+    const viewport = getViewportMetrics();
+    return {
+      left: rect.left + viewport.left,
+      right: rect.right + viewport.left,
+      top: rect.top + viewport.top,
+      bottom: rect.bottom + viewport.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+
+  function clampElementToViewport(element, desiredLeft, desiredTop, marginOverride) {
+    if (!element) return { left: desiredLeft, top: desiredTop };
+    const viewport = getViewportMetrics();
+    const margin = typeof marginOverride === 'number'
+      ? marginOverride
+      : (viewport.width <= 540 ? 6 : 8);
+    const elementWidth = element.offsetWidth || element.clientWidth || DEFAULT_POPUP_WIDTH;
+    const elementHeight = element.offsetHeight || element.clientHeight || DEFAULT_POPUP_HEIGHT;
+    const viewportWidth = viewport.width > 0 ? viewport.width : elementWidth + margin * 2;
+    const viewportHeight = viewport.height > 0 ? viewport.height : elementHeight + margin * 2;
+    const baseLeft = viewport.left + margin;
+    const baseTop = viewport.top + margin;
+    const maxLeft = Math.max(baseLeft, viewport.left + viewportWidth - elementWidth - margin);
+    const maxTop = Math.max(baseTop, viewport.top + viewportHeight - elementHeight - margin);
+    const clampedLeft = Math.max(baseLeft, Math.min(desiredLeft, maxLeft));
+    const clampedTop = Math.max(baseTop, Math.min(desiredTop, maxTop));
+    element.style.left = `${clampedLeft}px`;
+    element.style.top = `${clampedTop}px`;
+    return { left: clampedLeft, top: clampedTop, margin, viewport };
+  }
+
+  function ensurePopupWithinViewport(popup, options = {}) {
+    if (!popup) return;
+    const viewport = getViewportMetrics();
+    const margin = typeof options.margin === 'number'
+      ? options.margin
+      : (viewport.width <= 540 ? 6 : 8);
+    const widthLimit = Math.max(200, viewport.width - margin * 2);
+    const heightLimit = Math.max(150, viewport.height - margin * 2);
+    if (popup.offsetWidth > widthLimit) {
+      popup.style.width = `${widthLimit}px`;
+    }
+    if (popup.offsetHeight > heightLimit) {
+      popup.style.height = `${heightLimit}px`;
+    }
+    const desiredLeft = typeof options.desiredLeft === 'number' ? options.desiredLeft : popup.offsetLeft;
+    const desiredTop = typeof options.desiredTop === 'number' ? options.desiredTop : popup.offsetTop;
+    clampElementToViewport(popup, desiredLeft, desiredTop, margin);
+  }
+
+
   // Backward-compatible wrappers for GM storage (support both GM_* and GM.*)
   async function gmGetValue(key, defaultValue) {
     try {
@@ -234,22 +327,13 @@
     div.style.left = `${x}px`;
     div.style.top = `${y}px`;
 
-    // Clamp to viewport
-    const margin = 6;
-    const usedWidth = div.offsetWidth;
-    const usedHeight = div.offsetHeight;
-    const maxLeft = window.scrollX + window.innerWidth - usedWidth - margin;
-    const maxTop = window.scrollY + window.innerHeight - usedHeight - margin;
-    const clampedLeft = Math.max(window.scrollX + margin, Math.min(x, maxLeft));
-    const clampedTop = Math.max(window.scrollY + margin, Math.min(y, maxTop));
-    div.style.left = `${clampedLeft}px`;
-    div.style.top = `${clampedTop}px`;
+    clampElementToViewport(div, x, y, 6);
 
     div.addEventListener('click', async (event) => {
       event.stopPropagation();
       if (!selectedTextGlobal) return;
-      const iconRect = div.getBoundingClientRect();
-      const popup = createDetailedPopup(iconRect.left + window.scrollX, iconRect.bottom + window.scrollY + 5, selectedTextGlobal, true);
+      const iconRect = clientRectToPageRect(div.getBoundingClientRect());
+      const popup = createDetailedPopup(iconRect.left, iconRect.bottom + 5, selectedTextGlobal, true);
       if (smallIconPopup) smallIconPopup.style.display = 'none';
 
       const loading = popup.querySelector('#inlineLoadingIndicator');
@@ -273,6 +357,15 @@
         if (out) out.textContent = `エラー: ${err && err.message ? err.message : err}`;
       } finally {
         if (loading) loading.style.display = 'none';
+        const adjust = () => {
+          if (!popup || !popup.isConnected) return;
+          ensurePopupWithinViewport(popup);
+        };
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(adjust);
+        } else {
+          setTimeout(adjust, 0);
+        }
       }
     });
   }
@@ -299,19 +392,22 @@
     popup.style.top = `${y}px`;
     popup.style.zIndex = 10000 + popupIdCounter;
 
-    getSavedPopupSize().then(({ width, height }) => {
-      popup.style.width = `${width}px`;
-      popup.style.height = `${height}px`;
-      const margin = 8;
-      const usedWidth = popup.offsetWidth;
-      const usedHeight = popup.offsetHeight;
-      const maxLeft = window.scrollX + window.innerWidth - usedWidth - margin;
-      const maxTop = window.scrollY + window.innerHeight - usedHeight - margin;
-      const clampedLeft = Math.max(window.scrollX + margin, Math.min(x, maxLeft));
-      const clampedTop = Math.max(window.scrollY + margin, Math.min(y, maxTop));
-      popup.style.left = `${clampedLeft}px`;
-      popup.style.top = `${clampedTop}px`;
-    });
+    popup.style.visibility = 'hidden';
+    getSavedPopupSize()
+      .then(({ width, height }) => {
+        const safeWidth = Number(width) > 0 ? Number(width) : DEFAULT_POPUP_WIDTH;
+        const safeHeight = Number(height) > 0 ? Number(height) : DEFAULT_POPUP_HEIGHT;
+        popup.style.width = `${safeWidth}px`;
+        popup.style.height = `${safeHeight}px`;
+      })
+      .catch(() => {
+        popup.style.width = `${DEFAULT_POPUP_WIDTH}px`;
+        popup.style.height = `${DEFAULT_POPUP_HEIGHT}px`;
+      })
+      .finally(() => {
+        ensurePopupWithinViewport(popup, { desiredLeft: x, desiredTop: y });
+        popup.style.visibility = '';
+      });
 
     setupPopupInteractions(popup);
     return popup;
@@ -345,9 +441,9 @@
     const info = getSelectionRectFrom(win);
     if (!info) return false;
     selectedTextGlobal = info.text;
-    const frameRect = frameEl.getBoundingClientRect();
-    const x = window.scrollX + frameRect.left + info.rect.right - 10;
-    const y = window.scrollY + frameRect.top + info.rect.top - 10;
+    const frameRect = clientRectToPageRect(frameEl.getBoundingClientRect());
+    const x = frameRect.left + info.rect.right - 10;
+    const y = frameRect.top + info.rect.top - 10;
     createSmallIconPopup(x, y);
     return true;
   }
@@ -467,9 +563,9 @@
     for (const f of frames) {
       const info = getSelectionRectFrom(f.contentWindow);
       if (info) {
-        const frameRect = f.getBoundingClientRect();
-        const x = window.scrollX + frameRect.left + info.rect.right - 10;
-        const y = window.scrollY + frameRect.top + info.rect.top - 10;
+        const frameRect = clientRectToPageRect(f.getBoundingClientRect());
+        const x = frameRect.left + info.rect.right - 10;
+        const y = frameRect.top + info.rect.top - 10;
         return { text: info.text, x, y };
       }
     }
@@ -579,16 +675,18 @@
 
   const handlePointerUp = () => {
     isPointerDown = false;
-    if (!activeInteraction.element) return;
+    const element = activeInteraction.element;
+    if (!element) return;
     if (activeInteraction.isDragging) {
-      activeInteraction.element.style.userSelect = 'auto';
+      element.style.userSelect = 'auto';
     }
     if (activeInteraction.isResizing) {
       document.body.style.cursor = 'default';
-      const width = activeInteraction.element.offsetWidth;
-      const height = activeInteraction.element.offsetHeight;
+      const width = element.offsetWidth;
+      const height = element.offsetHeight;
       savePopupSize(width, height);
     }
+    ensurePopupWithinViewport(element);
     activeInteraction = {
       element: null,
       isDragging: false,
@@ -622,15 +720,15 @@
     if (event.target.closest && event.target.closest('.openrouter-translator-detailed-popup')) return;
     if (smallIconPopup && smallIconPopup.contains(event.target)) return;
     setTimeout(() => {
-      const currentSelectedText = window.getSelection().toString().trim();
-      if (currentSelectedText.length > 0) {
-        selectedTextGlobal = currentSelectedText;
-        const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0) return;
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
-      }
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+      const currentSelectedText = selection.toString().trim();
+      if (!currentSelectedText) return;
+      selectedTextGlobal = currentSelectedText;
+      const rect = getRangeDisplayRect(selection.getRangeAt(0));
+      if (!rect) return;
+      const rectPage = clientRectToPageRect(rect);
+      createSmallIconPopup(rectPage.right - 10, rectPage.top - 10);
     }, 0);
   }
 
@@ -644,17 +742,17 @@
       return;
     }
     selectionChangeTimer = setTimeout(() => {
-      const text = window.getSelection().toString().trim();
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+      const text = selection.toString().trim();
       if (!text) return;
       const activeEl = document.activeElement;
       if (activeEl && activeEl.closest && activeEl.closest('.openrouter-translator-detailed-popup')) return;
       selectedTextGlobal = text;
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0) return;
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      if (!rect || (rect.width === 0 && rect.height === 0)) return;
-      createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
+      const rect = getRangeDisplayRect(selection.getRangeAt(0));
+      if (!rect) return;
+      const rectPage = clientRectToPageRect(rect);
+      createSmallIconPopup(rectPage.right - 10, rectPage.top - 10);
     }, 80);
   }
 
@@ -675,10 +773,11 @@
       } else {
         const selection = window.getSelection();
         if (selection && selection.rangeCount > 0) {
-          const rect = selection.getRangeAt(0).getBoundingClientRect();
-          if (rect && (rect.width > 0 || rect.height > 0)) {
-            x = rect.right + window.scrollX - 10;
-            y = rect.top + window.scrollY - 10;
+          const rect = getRangeDisplayRect(selection.getRangeAt(0));
+          if (rect) {
+            const rectPage = clientRectToPageRect(rect);
+            x = rectPage.right - 10;
+            y = rectPage.top - 10;
           }
         }
       }
@@ -688,8 +787,9 @@
       }
       selectedTextGlobal = text;
       if (typeof x !== 'number' || typeof y !== 'number') {
-        x = window.scrollX + window.innerWidth / 2 - 200;
-        y = window.scrollY + window.innerHeight / 2 - 100;
+        const viewport = getViewportMetrics();
+        x = viewport.left + viewport.width / 2 - 200;
+        y = viewport.top + viewport.height / 2 - 100;
       }
       const popup = createDetailedPopup(x, y, selectedTextGlobal, true);
       const loading = popup.querySelector('#inlineLoadingIndicator');
@@ -713,6 +813,15 @@
         if (out) out.textContent = `エラー: ${err && err.message ? err.message : err}`;
       } finally {
         if (loading) loading.style.display = 'none';
+        const adjust = () => {
+          if (!popup || !popup.isConnected) return;
+          ensurePopupWithinViewport(popup);
+        };
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(adjust);
+        } else {
+          setTimeout(adjust, 0);
+        }
       }
     });
   }
@@ -920,6 +1029,32 @@
 
   // Start scanning for same-origin iframes (e.g., Readest viewer)
   try { startFrameBridge(); } catch (_) {}
+
+
+  let viewportAdjustTimer = null;
+  const scheduleViewportAdjust = () => {
+    if (viewportAdjustTimer !== null) return;
+    const runAdjust = () => {
+      viewportAdjustTimer = null;
+      if (smallIconPopup && smallIconPopup.isConnected) {
+        clampElementToViewport(smallIconPopup, smallIconPopup.offsetLeft, smallIconPopup.offsetTop, 6);
+      }
+      const popups = document.querySelectorAll('.openrouter-translator-detailed-popup');
+      popups.forEach((popup) => ensurePopupWithinViewport(popup));
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      viewportAdjustTimer = requestAnimationFrame(runAdjust);
+    } else {
+      viewportAdjustTimer = setTimeout(runAdjust, 16);
+    }
+  };
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', scheduleViewportAdjust);
+    window.visualViewport.addEventListener('scroll', scheduleViewportAdjust);
+  } else {
+    window.addEventListener('resize', scheduleViewportAdjust);
+  }
 
   // ---------- Global listeners ----------
   document.addEventListener('mousemove', handlePointerMove, { passive: false });
