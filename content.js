@@ -34,92 +34,6 @@ function getEventCoords(e) {
 // デフォルトのポップアップサイズ
 const DEFAULT_POPUP_WIDTH = 400;
 const DEFAULT_POPUP_HEIGHT = 300;
-const MIN_POPUP_WIDTH = 200;
-const MIN_POPUP_HEIGHT = 100;
-const VIEWPORT_MARGIN = 8;
-
-function getViewportMetrics() {
-  const viewport = window.visualViewport;
-  const docEl = document.documentElement;
-  const body = document.body;
-
-  const widthCandidates = [
-    viewport ? viewport.width : null,
-    docEl ? docEl.clientWidth : null,
-    body ? body.clientWidth : null,
-    window.innerWidth,
-  ].filter((value) => typeof value === 'number' && value > 0);
-
-  const heightCandidates = [
-    viewport ? viewport.height : null,
-    docEl ? docEl.clientHeight : null,
-    body ? body.clientHeight : null,
-    window.innerHeight,
-  ].filter((value) => typeof value === 'number' && value > 0);
-
-  const width =
-    widthCandidates.length > 0 ? Math.min(...widthCandidates) : window.innerWidth;
-  const height =
-    heightCandidates.length > 0 ? Math.min(...heightCandidates) : window.innerHeight;
-
-  if (viewport) {
-    return {
-      width,
-      height,
-      offsetLeft: viewport.pageLeft,
-      offsetTop: viewport.pageTop,
-    };
-  }
-  return {
-    width,
-    height,
-    offsetLeft: window.scrollX,
-    offsetTop: window.scrollY,
-  };
-}
-
-function clientToPageCoordinates(clientX, clientY) {
-  const { offsetLeft, offsetTop } = getViewportMetrics();
-  return {
-    x: clientX + offsetLeft,
-    y: clientY + offsetTop,
-  };
-}
-
-function clampSizeToViewport(width, height) {
-  const { width: viewportWidth, height: viewportHeight } = getViewportMetrics();
-  const availableWidth = Math.max(viewportWidth - VIEWPORT_MARGIN * 2, 1);
-  const availableHeight = Math.max(viewportHeight - VIEWPORT_MARGIN * 2, 1);
-
-  const minAllowedWidth = Math.min(MIN_POPUP_WIDTH, availableWidth);
-  const minAllowedHeight = Math.min(MIN_POPUP_HEIGHT, availableHeight);
-  const maxAllowedWidth = Math.max(availableWidth, minAllowedWidth);
-  const maxAllowedHeight = Math.max(availableHeight, minAllowedHeight);
-
-  return {
-    width: Math.min(Math.max(width, minAllowedWidth), maxAllowedWidth),
-    height: Math.min(Math.max(height, minAllowedHeight), maxAllowedHeight),
-  };
-}
-
-function clampPopupPosition(popupElement) {
-  const { width: viewportWidth, height: viewportHeight, offsetLeft, offsetTop } = getViewportMetrics();
-  const usedWidth = popupElement.offsetWidth;
-  const usedHeight = popupElement.offsetHeight;
-
-  let currentLeft = parseFloat(popupElement.style.left || `${offsetLeft + VIEWPORT_MARGIN}`);
-  let currentTop = parseFloat(popupElement.style.top || `${offsetTop + VIEWPORT_MARGIN}`);
-  if (Number.isNaN(currentLeft)) currentLeft = offsetLeft + VIEWPORT_MARGIN;
-  if (Number.isNaN(currentTop)) currentTop = offsetTop + VIEWPORT_MARGIN;
-
-  const maxLeft = offsetLeft + viewportWidth - usedWidth - VIEWPORT_MARGIN;
-  const maxTop = offsetTop + viewportHeight - usedHeight - VIEWPORT_MARGIN;
-  const clampedLeft = Math.max(offsetLeft + VIEWPORT_MARGIN, Math.min(currentLeft, maxLeft));
-  const clampedTop = Math.max(offsetTop + VIEWPORT_MARGIN, Math.min(currentTop, maxTop));
-
-  popupElement.style.left = `${clampedLeft}px`;
-  popupElement.style.top = `${clampedTop}px`;
-}
 
 function removeDetailedPopup(popupElement) {
   if (popupElement) {
@@ -161,13 +75,12 @@ function createSmallIconPopup(x, y) {
 
   // モバイル等の狭い画面でアイコンが画面外に出ないようにクランプ
   const margin = 6;
-  const { width: viewportWidth, height: viewportHeight, offsetLeft, offsetTop } = getViewportMetrics();
   const usedWidth = smallIconPopup.offsetWidth;
   const usedHeight = smallIconPopup.offsetHeight;
-  const maxLeft = offsetLeft + viewportWidth - usedWidth - margin;
-  const maxTop = offsetTop + viewportHeight - usedHeight - margin;
-  const clampedLeft = Math.max(offsetLeft + margin, Math.min(x, maxLeft));
-  const clampedTop = Math.max(offsetTop + margin, Math.min(y, maxTop));
+  const maxLeft = window.scrollX + window.innerWidth - usedWidth - margin;
+  const maxTop = window.scrollY + window.innerHeight - usedHeight - margin;
+  const clampedLeft = Math.max(window.scrollX + margin, Math.min(x, maxLeft));
+  const clampedTop = Math.max(window.scrollY + margin, Math.min(y, maxTop));
   smallIconPopup.style.left = `${clampedLeft}px`;
   smallIconPopup.style.top = `${clampedTop}px`;
 
@@ -177,8 +90,7 @@ function createSmallIconPopup(x, y) {
       const iconRect = smallIconPopup.getBoundingClientRect();
       // 詳細ポップアップを先に生成してローディング表示
       // Create the popup first and get a reference to it
-      const pageCoords = clientToPageCoordinates(iconRect.left, iconRect.bottom + 5);
-      const newDetailedPopup = createDetailedPopup(pageCoords.x, pageCoords.y, selectedTextGlobal, true);
+      const newDetailedPopup = createDetailedPopup(iconRect.left + window.scrollX, iconRect.bottom + window.scrollY + 5, selectedTextGlobal, true);
       if (smallIconPopup) {
         smallIconPopup.style.display = 'none';
       }
@@ -221,17 +133,15 @@ function getSavedPopupSize(callback) {
   chrome.storage.local.get(['popupWidth', 'popupHeight'], (result) => {
     const width = result.popupWidth || DEFAULT_POPUP_WIDTH;
     const height = result.popupHeight || DEFAULT_POPUP_HEIGHT;
-    const { width: clampedWidth, height: clampedHeight } = clampSizeToViewport(width, height);
-    callback(clampedWidth, clampedHeight);
+    callback(width, height);
   });
 }
 
 // ポップアップサイズを保存する関数
 function savePopupSize(width, height) {
-  const { width: clampedWidth, height: clampedHeight } = clampSizeToViewport(width, height);
   chrome.storage.local.set({
-    popupWidth: clampedWidth,
-    popupHeight: clampedHeight
+    popupWidth: width,
+    popupHeight: height
   });
 }
 
@@ -265,10 +175,18 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
   getSavedPopupSize((width, height) => {
     popupElement.style.width = `${width}px`;
     popupElement.style.height = `${height}px`;
-    // Apply initial position, then clamp it after size is applied and rendered.
-    requestAnimationFrame(() => {
-      clampPopupPosition(popupElement);
-    });
+
+    // 幅・高さ反映後に、ポップアップ位置をビューポート内にクランプ
+    // max-width/max-height により実際の表示サイズは縮む可能性があるため、offsetWidth/offsetHeight を使用
+    const margin = 8; // 画面端からの最小余白
+    const usedWidth = popupElement.offsetWidth;
+    const usedHeight = popupElement.offsetHeight;
+    const maxLeft = window.scrollX + window.innerWidth - usedWidth - margin;
+    const maxTop = window.scrollY + window.innerHeight - usedHeight - margin;
+    const clampedLeft = Math.max(window.scrollX + margin, Math.min(x, maxLeft));
+    const clampedTop = Math.max(window.scrollY + margin, Math.min(y, maxTop));
+    popupElement.style.left = `${clampedLeft}px`;
+    popupElement.style.top = `${clampedTop}px`;
   });
 
   // Setup all interaction event listeners for this specific popup
@@ -382,21 +300,21 @@ const handlePointerMove = (e) => {
     const dy = y - activeInteraction.dragStartY;
     activeInteraction.element.style.left = `${activeInteraction.popupStartX + dx}px`;
     activeInteraction.element.style.top = `${activeInteraction.popupStartY + dy}px`;
-    clampPopupPosition(activeInteraction.element);
   }
 
   if (activeInteraction.isResizing) {
     if (activeInteraction.resizeType.includes('e')) {
-      const desiredWidth = activeInteraction.startWidth + (x - activeInteraction.startX);
-      const { width: clampedWidth } = clampSizeToViewport(desiredWidth, activeInteraction.element.offsetHeight);
-      activeInteraction.element.style.width = `${clampedWidth}px`;
+      const width = activeInteraction.startWidth + (x - activeInteraction.startX);
+      if (width >= 200) {
+        activeInteraction.element.style.width = `${width}px`;
+      }
     }
     if (activeInteraction.resizeType.includes('s')) {
-      const desiredHeight = activeInteraction.startHeight + (y - activeInteraction.startY);
-      const { height: clampedHeight } = clampSizeToViewport(activeInteraction.element.offsetWidth, desiredHeight);
-      activeInteraction.element.style.height = `${clampedHeight}px`;
+      const height = activeInteraction.startHeight + (y - activeInteraction.startY);
+      if (height >= 100) {
+        activeInteraction.element.style.height = `${height}px`;
+      }
     }
-    clampPopupPosition(activeInteraction.element);
   }
 };
 document.addEventListener('mousemove', handlePointerMove, { passive: false });
@@ -409,8 +327,6 @@ const handlePointerUp = () => {
 
   if (activeInteraction.isDragging) {
     activeInteraction.element.style.userSelect = 'auto';
-    // Ensure popup is within bounds after dragging
-    clampPopupPosition(activeInteraction.element);
   }
 
   if (activeInteraction.isResizing) {
@@ -418,8 +334,6 @@ const handlePointerUp = () => {
     const width = activeInteraction.element.offsetWidth;
     const height = activeInteraction.element.offsetHeight;
     savePopupSize(width, height); // Saves size for future popups
-    // Ensure popup is within bounds after resizing
-    clampPopupPosition(activeInteraction.element);
   }
 
   // Reset interaction state
@@ -490,9 +404,8 @@ const handleSelectionEnd = (event) => {
 
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      const pageCoords = clientToPageCoordinates(rect.right - 10, rect.top - 10);
 
-      createSmallIconPopup(pageCoords.x, pageCoords.y);
+      createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
     }
   }, 0);
 };
@@ -524,8 +437,7 @@ document.addEventListener('selectionchange', () => {
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) return;
-    const pageCoords = clientToPageCoordinates(rect.right - 10, rect.top - 10);
-    createSmallIconPopup(pageCoords.x, pageCoords.y);
+    createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
   }, 80);
 });
 
@@ -547,16 +459,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const rect = range.getBoundingClientRect();
       // If the selection is visible, use its position
       if (rect && rect.width > 0 && rect.height > 0) {
-        const pageCoords = clientToPageCoordinates(rect.right - 10, rect.top - 10);
-        x = pageCoords.x;
-        y = pageCoords.y;
+        x = rect.right + window.scrollX - 10;
+        y = rect.top + window.scrollY - 10;
       }
     }
     // Fallback to center if selection position is not available
     if (typeof x !== "number" || typeof y !== "number") {
-      const { width: viewportWidth, height: viewportHeight, offsetLeft, offsetTop } = getViewportMetrics();
-      x = offsetLeft + viewportWidth / 2 - DEFAULT_POPUP_WIDTH / 2;
-      y = offsetTop + viewportHeight / 2 - DEFAULT_POPUP_HEIGHT / 2;
+      x = window.innerWidth / 2 - 200;
+      y = window.innerHeight / 2 - 100;
     }
     const newDetailedPopup = createDetailedPopup(x, y, selectedTextGlobal, true);
 
