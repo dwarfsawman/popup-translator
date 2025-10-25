@@ -4,6 +4,7 @@ let smallIconPopup = null;
 let selectedTextGlobal = '';
 let popupIdCounter = 0;
 let isPointerDown = false;
+let lastPointerPosition = { x: null, y: null };
 // Track the active interaction (drag/resize) and the element being interacted with.
 let activeInteraction = {
   element: null,
@@ -34,6 +35,7 @@ function getEventCoords(e) {
 // デフォルトのポップアップサイズ
 const DEFAULT_POPUP_WIDTH = 400;
 const DEFAULT_POPUP_HEIGHT = 300;
+const KEYBOARD_POPUP_OFFSET = 12;
 
 function removeDetailedPopup(popupElement) {
   if (popupElement) {
@@ -95,35 +97,7 @@ function createSmallIconPopup(x, y) {
         smallIconPopup.style.display = 'none';
       }
 
-      // APIリクエスト
-      chrome.runtime.sendMessage(
-        { action: "translate", text: selectedTextGlobal, targetLanguage: "Japanese" },
-        (response) => {
-          // Use the specific popup instance we just created
-          if (!newDetailedPopup) return;
-          const loadingIndicator = newDetailedPopup.querySelector('#inlineLoadingIndicator');
-          const outputArea = newDetailedPopup.querySelector('#inlineTranslationOutput');
-
-          if (loadingIndicator) loadingIndicator.style.display = 'none';
-          if (!outputArea) return;
-
-          if (chrome.runtime.lastError) {
-            outputArea.textContent = 'エラー: ' + chrome.runtime.lastError.message;
-            return;
-          }
-          if (response) {
-            if (response.error) {
-              outputArea.textContent = 'エラー: ' + response.error;
-            } else if (response.translatedText) {
-              outputArea.textContent = response.translatedText;
-            } else {
-              outputArea.textContent = '翻訳結果がありません。';
-            }
-          } else {
-            outputArea.textContent = '応答がありません。';
-          }
-        }
-      );
+      requestTranslationForPopup(newDetailedPopup, selectedTextGlobal);
     }
   });
 }
@@ -193,6 +167,39 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
   setupPopupInteractions(popupElement);
 
   return popupElement; // Return the new element so it can be updated with content
+}
+
+function requestTranslationForPopup(popupElement, text) {
+  if (!popupElement) return;
+
+  chrome.runtime.sendMessage(
+    { action: "translate", text, targetLanguage: "Japanese" },
+    (response) => {
+      if (!popupElement || !popupElement.isConnected) return;
+      const loadingIndicator = popupElement.querySelector('#inlineLoadingIndicator');
+      const outputArea = popupElement.querySelector('#inlineTranslationOutput');
+
+      if (loadingIndicator) loadingIndicator.style.display = 'none';
+      if (!outputArea) return;
+
+      if (chrome.runtime.lastError) {
+        outputArea.textContent = 'エラー: ' + chrome.runtime.lastError.message;
+        return;
+      }
+
+      if (response) {
+        if (response.error) {
+          outputArea.textContent = 'エラー: ' + response.error;
+        } else if (response.translatedText) {
+          outputArea.textContent = response.translatedText;
+        } else {
+          outputArea.textContent = '翻訳結果がありません。';
+        }
+      } else {
+        outputArea.textContent = '応答がありません。';
+      }
+    }
+  );
 }
 
 // Sets up dragging, closing, and resizing for a specific popup element.
@@ -292,8 +299,13 @@ function setupResizeHandlers(popupElement) {
 
 // Global move handler for dragging and resizing (mouse & touch).
 const handlePointerMove = (e) => {
-  if (!activeInteraction.element) return;
   const { x, y } = getEventCoords(e);
+  lastPointerPosition = {
+    x: x + window.scrollX,
+    y: y + window.scrollY,
+  };
+
+  if (!activeInteraction.element) return;
 
   if (activeInteraction.isDragging) {
     const dx = x - activeInteraction.dragStartX;
@@ -360,6 +372,14 @@ document.addEventListener('touchcancel', () => {
 
 // Pointer start listener to handle popup dismissal
 const handlePointerStart = (event) => {
+  const { x, y } = getEventCoords(event);
+  if (typeof x === 'number' && typeof y === 'number') {
+    lastPointerPosition = {
+      x: x + window.scrollX,
+      y: y + window.scrollY,
+    };
+  }
+
   if (event.type === 'mousedown') {
     if (event.button === 0) {
       isPointerDown = true;
@@ -441,6 +461,53 @@ document.addEventListener('selectionchange', () => {
   }, 80);
 });
 
+const handleKeyboardTranslationShortcut = (event) => {
+  if (!event.altKey || event.ctrlKey || event.metaKey) {
+    return;
+  }
+
+  const isQuoteKey = event.code === 'Quote' || event.key === "'" || event.key === '"';
+  if (!isQuoteKey || event.repeat) {
+    return;
+  }
+
+  const selection = window.getSelection();
+  let text = selection ? selection.toString().trim() : '';
+  if (!text && selectedTextGlobal) {
+    text = selectedTextGlobal;
+  }
+  if (!text) {
+    return;
+  }
+
+  selectedTextGlobal = text;
+
+  event.preventDefault();
+
+  let popupX = Number.isFinite(lastPointerPosition.x) ? lastPointerPosition.x + KEYBOARD_POPUP_OFFSET : null;
+  let popupY = Number.isFinite(lastPointerPosition.y) ? lastPointerPosition.y + KEYBOARD_POPUP_OFFSET : null;
+
+  if ((popupX === null || popupY === null) && selection && selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (rect && (rect.width > 0 || rect.height > 0)) {
+      popupX = rect.right + window.scrollX - 10;
+      popupY = rect.top + window.scrollY - 10;
+    }
+  }
+
+  if (popupX === null || popupY === null) {
+    popupX = window.scrollX + window.innerWidth / 2 - DEFAULT_POPUP_WIDTH / 2;
+    popupY = window.scrollY + window.innerHeight / 2 - DEFAULT_POPUP_HEIGHT / 2;
+  }
+
+  removeSmallIconPopup();
+
+  const keyboardPopup = createDetailedPopup(popupX, popupY, text, true);
+  requestTranslationForPopup(keyboardPopup, text);
+};
+document.addEventListener('keydown', handleKeyboardTranslationShortcut);
+
 // Listen for context menu message from background.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "showPopupFromContextMenu") {
@@ -470,33 +537,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     const newDetailedPopup = createDetailedPopup(x, y, selectedTextGlobal, true);
 
-    // APIリクエスト
-    chrome.runtime.sendMessage(
-      { action: "translate", text: selectedTextGlobal, targetLanguage: "Japanese" },
-      (response) => {
-        if (!newDetailedPopup) return;
-        const loadingIndicator = newDetailedPopup.querySelector('#inlineLoadingIndicator');
-        const outputArea = newDetailedPopup.querySelector('#inlineTranslationOutput');
-        if (loadingIndicator) loadingIndicator.style.display = 'none';
-        if (!outputArea) return;
-
-        if (chrome.runtime.lastError) {
-          outputArea.textContent = 'エラー: ' + chrome.runtime.lastError.message;
-          return;
-        }
-        if (response) {
-          if (response.error) {
-            outputArea.textContent = 'エラー: ' + response.error;
-          } else if (response.translatedText) {
-            outputArea.textContent = response.translatedText;
-          } else {
-            outputArea.textContent = '翻訳結果がありません。';
-          }
-        } else {
-          outputArea.textContent = '応答がありません。';
-        }
-      }
-    );
+    requestTranslationForPopup(newDetailedPopup, selectedTextGlobal);
   }
 });
 
