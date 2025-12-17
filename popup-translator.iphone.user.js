@@ -27,7 +27,7 @@
   const DEFAULT_POPUP_WIDTH = 400;
   const DEFAULT_POPUP_HEIGHT = 300;
   const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-  const MODEL = 'openai/gpt-4.1';
+  const MODEL = 'openai/gpt-5.2';
   // iPhone版ではAPIキーをハードコードして使用します。
   // 必ずあなたのOpenRouter APIキーに置き換えてください。
   // 例: const HARDCODED_API_KEY = 'sk-or-v1-...';

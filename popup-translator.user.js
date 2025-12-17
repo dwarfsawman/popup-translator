@@ -27,7 +27,7 @@
   const DEFAULT_POPUP_WIDTH = 400;
   const DEFAULT_POPUP_HEIGHT = 300;
   const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-  const MODEL = 'openai/gpt-4.1';
+  const MODEL = 'openai/gpt-5.2';
 
   // ---------- State ----------
   let smallIconPopup = null;
@@ -492,10 +492,10 @@
       if (!e.target.closest('.popup-drag-handle')) return;
       e.preventDefault();
       const { x, y } = getEventCoords(e);
-      activeInteraction.isDragging = true;
-      activeInteraction.element = popupElement;
-      activeInteraction.dragStartX = x;
-      activeInteraction.dragStartY = y;
+    activeInteraction.isDragging = true;
+    activeInteraction.element = popupElement;
+    activeInteraction.dragStartX = x;
+    activeInteraction.dragStartY = y;
       activeInteraction.popupStartX = popupElement.offsetLeft;
       activeInteraction.popupStartY = popupElement.offsetTop;
       popupElement.style.userSelect = 'none';

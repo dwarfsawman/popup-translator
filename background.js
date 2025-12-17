@@ -61,7 +61,7 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
         'X-Title': 'OpenRouter Translator Extension'
       },
       body: JSON.stringify({
-        model: "openai/gpt-4.1",
+        model: "openai/gpt-5.2",
         messages: [
           {
             role: "system",
