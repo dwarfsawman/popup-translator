@@ -61,7 +61,7 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
         'X-Title': 'OpenRouter Translator Extension'
       },
       body: JSON.stringify({
-        model: "openai/gpt-5.2",
+        model: "x-ai/grok-4.1-fast",
         messages: [
           {
             role: "system",
@@ -72,7 +72,7 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
             content: text
           }
         ],
-        max_tokens: 4000,
+        max_tokens: 2000,
         temperature: 0.7
       })
     });
