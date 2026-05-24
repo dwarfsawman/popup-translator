@@ -26,6 +26,8 @@
   // ---------- Configuration ----------
   const DEFAULT_POPUP_WIDTH = 400;
   const DEFAULT_POPUP_HEIGHT = 300;
+  const POPUP_VIEWPORT_MARGIN = 8;
+  const DETAILED_POPUP_SIDE_MARGIN = 72;
   const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
   const MODEL = 'openai/gpt-5.2';
 
@@ -67,6 +69,158 @@
       return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
     }
     return { x: e.clientX, y: e.clientY };
+  }
+
+  function getViewportBounds() {
+    const docEl = document.documentElement;
+    const body = document.body;
+    const fallbackScrollX = window.scrollX || (docEl && docEl.scrollLeft) || (body && body.scrollLeft) || 0;
+    const fallbackScrollY = window.scrollY || (docEl && docEl.scrollTop) || (body && body.scrollTop) || 0;
+    const visualViewport = window.visualViewport;
+
+    try {
+      if (window.parent && window.parent !== window && window.frameElement) {
+        const frameRect = window.frameElement.getBoundingClientRect();
+        const parentViewport = window.parent.visualViewport;
+        const parentLeft = parentViewport ? parentViewport.offsetLeft : 0;
+        const parentTop = parentViewport ? parentViewport.offsetTop : 0;
+        const parentRight = parentLeft + (parentViewport ? parentViewport.width : window.parent.innerWidth);
+        const parentBottom = parentTop + (parentViewport ? parentViewport.height : window.parent.innerHeight);
+        const visibleLeft = Math.max(parentLeft, frameRect.left);
+        const visibleTop = Math.max(parentTop, frameRect.top);
+        const visibleRight = Math.min(parentRight, frameRect.right);
+        const visibleBottom = Math.min(parentBottom, frameRect.bottom);
+
+        if (visibleRight > visibleLeft && visibleBottom > visibleTop) {
+          return {
+            left: fallbackScrollX + visibleLeft - frameRect.left,
+            top: fallbackScrollY + visibleTop - frameRect.top,
+            width: visibleRight - visibleLeft,
+            height: visibleBottom - visibleTop,
+          };
+        }
+      }
+    } catch (_) { }
+
+    if (visualViewport) {
+      return {
+        left: typeof visualViewport.pageLeft === 'number'
+          ? visualViewport.pageLeft
+          : fallbackScrollX + (visualViewport.offsetLeft || 0),
+        top: typeof visualViewport.pageTop === 'number'
+          ? visualViewport.pageTop
+          : fallbackScrollY + (visualViewport.offsetTop || 0),
+        width: visualViewport.width || window.innerWidth || (docEl && docEl.clientWidth) || DEFAULT_POPUP_WIDTH,
+        height: visualViewport.height || window.innerHeight || (docEl && docEl.clientHeight) || DEFAULT_POPUP_HEIGHT,
+      };
+    }
+
+    const widthCandidates = [
+      window.innerWidth,
+      docEl && docEl.clientWidth,
+      body && body.clientWidth,
+    ].filter((value) => Number.isFinite(value) && value > 0);
+    const heightCandidates = [
+      window.innerHeight,
+      docEl && docEl.clientHeight,
+      body && body.clientHeight,
+    ].filter((value) => Number.isFinite(value) && value > 0);
+
+    return {
+      left: fallbackScrollX,
+      top: fallbackScrollY,
+      width: widthCandidates.length ? Math.min(...widthCandidates) : DEFAULT_POPUP_WIDTH,
+      height: heightCandidates.length ? Math.min(...heightCandidates) : DEFAULT_POPUP_HEIGHT,
+    };
+  }
+
+  function normalizeViewportMargins(margin = POPUP_VIEWPORT_MARGIN) {
+    if (typeof margin === 'number') {
+      return {
+        top: margin,
+        right: margin,
+        bottom: margin,
+        left: margin,
+      };
+    }
+
+    return {
+      top: Number.isFinite(margin.top) ? margin.top : POPUP_VIEWPORT_MARGIN,
+      right: Number.isFinite(margin.right) ? margin.right : POPUP_VIEWPORT_MARGIN,
+      bottom: Number.isFinite(margin.bottom) ? margin.bottom : POPUP_VIEWPORT_MARGIN,
+      left: Number.isFinite(margin.left) ? margin.left : POPUP_VIEWPORT_MARGIN,
+    };
+  }
+
+  function getDetailedPopupViewportMargins() {
+    return {
+      top: POPUP_VIEWPORT_MARGIN,
+      right: DETAILED_POPUP_SIDE_MARGIN,
+      bottom: POPUP_VIEWPORT_MARGIN,
+      left: DETAILED_POPUP_SIDE_MARGIN,
+    };
+  }
+
+  function clampElementToViewport(element, desiredLeft, desiredTop, margin = POPUP_VIEWPORT_MARGIN) {
+    if (!element) return;
+
+    const viewport = getViewportBounds();
+    const margins = normalizeViewportMargins(margin);
+    const rect = element.getBoundingClientRect();
+    const elementWidth = element.offsetWidth || rect.width || 0;
+    const elementHeight = element.offsetHeight || rect.height || 0;
+    const minLeft = viewport.left + margins.left;
+    const minTop = viewport.top + margins.top;
+    const maxLeft = Math.max(minLeft, viewport.left + viewport.width - elementWidth - margins.right);
+    const maxTop = Math.max(minTop, viewport.top + viewport.height - elementHeight - margins.bottom);
+    const left = Number.isFinite(desiredLeft) ? desiredLeft : element.offsetLeft;
+    const top = Number.isFinite(desiredTop) ? desiredTop : element.offsetTop;
+
+    element.style.left = `${Math.max(minLeft, Math.min(left, maxLeft))}px`;
+    element.style.top = `${Math.max(minTop, Math.min(top, maxTop))}px`;
+  }
+
+  function fitDetailedPopupToViewport(popup, margin = POPUP_VIEWPORT_MARGIN) {
+    if (!popup) return;
+
+    const viewport = getViewportBounds();
+    const margins = normalizeViewportMargins(margin);
+    const widthLimit = Math.max(200, Math.floor(viewport.width - margins.left - margins.right));
+    const heightLimit = Math.max(100, Math.floor(viewport.height - margins.top - margins.bottom));
+
+    if (popup.offsetWidth > widthLimit) {
+      popup.style.width = `${widthLimit}px`;
+    }
+    if (popup.offsetHeight > heightLimit) {
+      popup.style.height = `${heightLimit}px`;
+    }
+  }
+
+  function ensureDetailedPopupWithinViewport(popup, options = {}) {
+    if (!popup || !popup.isConnected) return;
+
+    const margin = options.margin || getDetailedPopupViewportMargins();
+    fitDetailedPopupToViewport(popup, margin);
+    const desiredLeft = Number.isFinite(options.desiredLeft) ? options.desiredLeft : popup.offsetLeft;
+    const desiredTop = Number.isFinite(options.desiredTop) ? options.desiredTop : popup.offsetTop;
+    clampElementToViewport(popup, desiredLeft, desiredTop, margin);
+  }
+
+  let viewportClampFrame = null;
+  function scheduleViewportAdjust() {
+    if (viewportClampFrame !== null) return;
+
+    viewportClampFrame = requestAnimationFrame(() => {
+      viewportClampFrame = null;
+
+      if (smallIconPopup && smallIconPopup.isConnected) {
+        clampElementToViewport(smallIconPopup, smallIconPopup.offsetLeft, smallIconPopup.offsetTop, 6);
+      }
+
+      document.querySelectorAll('.openrouter-translator-detailed-popup').forEach((popup) => {
+        ensureDetailedPopupWithinViewport(popup);
+      });
+    });
   }
 
   // Backward-compatible wrappers for GM storage (support both GM_* and GM.*)
@@ -238,16 +392,7 @@
     div.style.left = `${x}px`;
     div.style.top = `${y}px`;
 
-    // Clamp to viewport
-    const margin = 6;
-    const usedWidth = div.offsetWidth;
-    const usedHeight = div.offsetHeight;
-    const maxLeft = window.scrollX + window.innerWidth - usedWidth - margin;
-    const maxTop = window.scrollY + window.innerHeight - usedHeight - margin;
-    const clampedLeft = Math.max(window.scrollX + margin, Math.min(x, maxLeft));
-    const clampedTop = Math.max(window.scrollY + margin, Math.min(y, maxTop));
-    div.style.left = `${clampedLeft}px`;
-    div.style.top = `${clampedTop}px`;
+    clampElementToViewport(div, x, y, 6);
 
     div.addEventListener('click', async (event) => {
       event.stopPropagation();
@@ -262,6 +407,7 @@
         const apiKey = await getApiKey();
         if (!apiKey) {
           if (out) out.textContent = 'エラー: APIキーが設定されていません。ユーザースクリプトのメニューから設定してください。';
+          ensureDetailedPopupWithinViewport(popup);
           return;
         }
         const response = await translateTextWithOpenRouter(selectedTextGlobal, 'Japanese');
@@ -277,6 +423,7 @@
         if (out) out.textContent = `エラー: ${err && err.message ? err.message : err}`;
       } finally {
         if (loading) loading.style.display = 'none';
+        ensureDetailedPopupWithinViewport(popup);
       }
     });
   }
@@ -301,20 +448,16 @@
     document.body.appendChild(popup);
     popup.style.left = `${x}px`;
     popup.style.top = `${y}px`;
+    popup.style.visibility = 'hidden';
     popup.style.zIndex = 10000 + popupIdCounter;
 
     getSavedPopupSize().then(({ width, height }) => {
+      if (!popup.isConnected) return;
+
       popup.style.width = `${width}px`;
       popup.style.height = `${height}px`;
-      const margin = 8;
-      const usedWidth = popup.offsetWidth;
-      const usedHeight = popup.offsetHeight;
-      const maxLeft = window.scrollX + window.innerWidth - usedWidth - margin;
-      const maxTop = window.scrollY + window.innerHeight - usedHeight - margin;
-      const clampedLeft = Math.max(window.scrollX + margin, Math.min(x, maxLeft));
-      const clampedTop = Math.max(window.scrollY + margin, Math.min(y, maxTop));
-      popup.style.left = `${clampedLeft}px`;
-      popup.style.top = `${clampedTop}px`;
+      ensureDetailedPopupWithinViewport(popup, { desiredLeft: x, desiredTop: y });
+      popup.style.visibility = '';
     });
 
     setupPopupInteractions(popup);
@@ -554,8 +697,10 @@
     if (activeInteraction.isDragging) {
       const dx = x - activeInteraction.dragStartX;
       const dy = y - activeInteraction.dragStartY;
-      activeInteraction.element.style.left = `${activeInteraction.popupStartX + dx}px`;
-      activeInteraction.element.style.top = `${activeInteraction.popupStartY + dy}px`;
+      ensureDetailedPopupWithinViewport(activeInteraction.element, {
+        desiredLeft: activeInteraction.popupStartX + dx,
+        desiredTop: activeInteraction.popupStartY + dy,
+      });
     }
     if (activeInteraction.isResizing) {
       if (activeInteraction.resizeType.includes('e')) {
@@ -571,9 +716,13 @@
         const newWidth = activeInteraction.startWidth - dx;
         if (newWidth >= 200) {
           activeInteraction.element.style.width = `${newWidth}px`;
-          activeInteraction.element.style.left = `${activeInteraction.popupStartX + dx}px`;
+          ensureDetailedPopupWithinViewport(activeInteraction.element, {
+            desiredLeft: activeInteraction.popupStartX + dx,
+            desiredTop: activeInteraction.popupStartY,
+          });
         }
       }
+      ensureDetailedPopupWithinViewport(activeInteraction.element);
     }
   };
 
@@ -584,6 +733,7 @@
     }
     if (activeInteraction.isResizing) {
       document.body.style.cursor = 'default';
+      ensureDetailedPopupWithinViewport(activeInteraction.element);
       const width = activeInteraction.element.offsetWidth;
       const height = activeInteraction.element.offsetHeight;
       savePopupSize(width, height);
@@ -673,8 +823,9 @@
       }
       selectedTextGlobal = text;
       if (typeof x !== 'number' || typeof y !== 'number') {
-        x = window.scrollX + window.innerWidth / 2 - 200;
-        y = window.scrollY + window.innerHeight / 2 - 100;
+        const viewport = getViewportBounds();
+        x = viewport.left + viewport.width / 2 - DEFAULT_POPUP_WIDTH / 2;
+        y = viewport.top + viewport.height / 2 - DEFAULT_POPUP_HEIGHT / 2;
       }
       const popup = createDetailedPopup(x, y, selectedTextGlobal, true);
       const loading = popup.querySelector('#inlineLoadingIndicator');
@@ -698,6 +849,7 @@
         if (out) out.textContent = `エラー: ${err && err.message ? err.message : err}`;
       } finally {
         if (loading) loading.style.display = 'none';
+        ensureDetailedPopupWithinViewport(popup);
       }
     });
   }
@@ -908,6 +1060,12 @@
   document.addEventListener('touchmove', handlePointerMove, { passive: false });
   document.addEventListener('mouseup', handlePointerUp);
   document.addEventListener('touchend', handlePointerUp);
+  window.addEventListener('resize', scheduleViewportAdjust);
+  window.addEventListener('scroll', scheduleViewportAdjust, true);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', scheduleViewportAdjust);
+    window.visualViewport.addEventListener('scroll', scheduleViewportAdjust);
+  }
   document.addEventListener('mousedown', handlePointerStart);
   document.addEventListener('touchstart', handlePointerStart);
   document.addEventListener('mouseup', onSelectionEnd);

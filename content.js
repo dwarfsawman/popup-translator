@@ -36,6 +36,162 @@ function getEventCoords(e) {
 const DEFAULT_POPUP_WIDTH = 400;
 const DEFAULT_POPUP_HEIGHT = 300;
 const KEYBOARD_POPUP_OFFSET = 12;
+const POPUP_VIEWPORT_MARGIN = 8;
+const DETAILED_POPUP_SIDE_MARGIN = 72;
+
+function getViewportBounds() {
+  const docEl = document.documentElement;
+  const body = document.body;
+  const fallbackScrollX = window.scrollX || (docEl && docEl.scrollLeft) || (body && body.scrollLeft) || 0;
+  const fallbackScrollY = window.scrollY || (docEl && docEl.scrollTop) || (body && body.scrollTop) || 0;
+  const visualViewport = window.visualViewport;
+
+  try {
+    if (window.parent && window.parent !== window && window.frameElement) {
+      const frameRect = window.frameElement.getBoundingClientRect();
+      const parentViewport = window.parent.visualViewport;
+      const parentLeft = parentViewport ? parentViewport.offsetLeft : 0;
+      const parentTop = parentViewport ? parentViewport.offsetTop : 0;
+      const parentRight = parentLeft + (parentViewport ? parentViewport.width : window.parent.innerWidth);
+      const parentBottom = parentTop + (parentViewport ? parentViewport.height : window.parent.innerHeight);
+      const visibleLeft = Math.max(parentLeft, frameRect.left);
+      const visibleTop = Math.max(parentTop, frameRect.top);
+      const visibleRight = Math.min(parentRight, frameRect.right);
+      const visibleBottom = Math.min(parentBottom, frameRect.bottom);
+
+      if (visibleRight > visibleLeft && visibleBottom > visibleTop) {
+        return {
+          left: fallbackScrollX + visibleLeft - frameRect.left,
+          top: fallbackScrollY + visibleTop - frameRect.top,
+          width: visibleRight - visibleLeft,
+          height: visibleBottom - visibleTop,
+        };
+      }
+    }
+  } catch (error) {
+    // Cross-origin frames can deny parent/frame access; fall back to the local viewport.
+  }
+
+  if (visualViewport) {
+    return {
+      left: typeof visualViewport.pageLeft === 'number'
+        ? visualViewport.pageLeft
+        : fallbackScrollX + (visualViewport.offsetLeft || 0),
+      top: typeof visualViewport.pageTop === 'number'
+        ? visualViewport.pageTop
+        : fallbackScrollY + (visualViewport.offsetTop || 0),
+      width: visualViewport.width || window.innerWidth || (docEl && docEl.clientWidth) || DEFAULT_POPUP_WIDTH,
+      height: visualViewport.height || window.innerHeight || (docEl && docEl.clientHeight) || DEFAULT_POPUP_HEIGHT,
+    };
+  }
+
+  const widthCandidates = [
+    window.innerWidth,
+    docEl && docEl.clientWidth,
+    body && body.clientWidth,
+  ].filter((value) => Number.isFinite(value) && value > 0);
+  const heightCandidates = [
+    window.innerHeight,
+    docEl && docEl.clientHeight,
+    body && body.clientHeight,
+  ].filter((value) => Number.isFinite(value) && value > 0);
+
+  return {
+    left: fallbackScrollX,
+    top: fallbackScrollY,
+    width: widthCandidates.length ? Math.min(...widthCandidates) : DEFAULT_POPUP_WIDTH,
+    height: heightCandidates.length ? Math.min(...heightCandidates) : DEFAULT_POPUP_HEIGHT,
+  };
+}
+
+function normalizeViewportMargins(margin = POPUP_VIEWPORT_MARGIN) {
+  if (typeof margin === 'number') {
+    return {
+      top: margin,
+      right: margin,
+      bottom: margin,
+      left: margin,
+    };
+  }
+
+  return {
+    top: Number.isFinite(margin.top) ? margin.top : POPUP_VIEWPORT_MARGIN,
+    right: Number.isFinite(margin.right) ? margin.right : POPUP_VIEWPORT_MARGIN,
+    bottom: Number.isFinite(margin.bottom) ? margin.bottom : POPUP_VIEWPORT_MARGIN,
+    left: Number.isFinite(margin.left) ? margin.left : POPUP_VIEWPORT_MARGIN,
+  };
+}
+
+function getDetailedPopupViewportMargins() {
+  return {
+    top: POPUP_VIEWPORT_MARGIN,
+    right: DETAILED_POPUP_SIDE_MARGIN,
+    bottom: POPUP_VIEWPORT_MARGIN,
+    left: DETAILED_POPUP_SIDE_MARGIN,
+  };
+}
+
+function clampElementToViewport(element, desiredLeft, desiredTop, margin = POPUP_VIEWPORT_MARGIN) {
+  if (!element) return;
+
+  const viewport = getViewportBounds();
+  const margins = normalizeViewportMargins(margin);
+  const rect = element.getBoundingClientRect();
+  const elementWidth = element.offsetWidth || rect.width || 0;
+  const elementHeight = element.offsetHeight || rect.height || 0;
+  const minLeft = viewport.left + margins.left;
+  const minTop = viewport.top + margins.top;
+  const maxLeft = Math.max(minLeft, viewport.left + viewport.width - elementWidth - margins.right);
+  const maxTop = Math.max(minTop, viewport.top + viewport.height - elementHeight - margins.bottom);
+  const left = Number.isFinite(desiredLeft) ? desiredLeft : element.offsetLeft;
+  const top = Number.isFinite(desiredTop) ? desiredTop : element.offsetTop;
+
+  element.style.left = `${Math.max(minLeft, Math.min(left, maxLeft))}px`;
+  element.style.top = `${Math.max(minTop, Math.min(top, maxTop))}px`;
+}
+
+function fitDetailedPopupToViewport(popupElement, margin = POPUP_VIEWPORT_MARGIN) {
+  if (!popupElement) return;
+
+  const viewport = getViewportBounds();
+  const margins = normalizeViewportMargins(margin);
+  const widthLimit = Math.max(200, Math.floor(viewport.width - margins.left - margins.right));
+  const heightLimit = Math.max(100, Math.floor(viewport.height - margins.top - margins.bottom));
+
+  if (popupElement.offsetWidth > widthLimit) {
+    popupElement.style.width = `${widthLimit}px`;
+  }
+  if (popupElement.offsetHeight > heightLimit) {
+    popupElement.style.height = `${heightLimit}px`;
+  }
+}
+
+function ensureDetailedPopupWithinViewport(popupElement, options = {}) {
+  if (!popupElement || !popupElement.isConnected) return;
+
+  const margin = options.margin || getDetailedPopupViewportMargins();
+  fitDetailedPopupToViewport(popupElement, margin);
+  const desiredLeft = Number.isFinite(options.desiredLeft) ? options.desiredLeft : popupElement.offsetLeft;
+  const desiredTop = Number.isFinite(options.desiredTop) ? options.desiredTop : popupElement.offsetTop;
+  clampElementToViewport(popupElement, desiredLeft, desiredTop, margin);
+}
+
+let viewportClampFrame = null;
+function scheduleTranslatorViewportClamp() {
+  if (viewportClampFrame !== null) return;
+
+  viewportClampFrame = requestAnimationFrame(() => {
+    viewportClampFrame = null;
+
+    if (smallIconPopup && smallIconPopup.isConnected) {
+      clampElementToViewport(smallIconPopup, smallIconPopup.offsetLeft, smallIconPopup.offsetTop, 6);
+    }
+
+    document.querySelectorAll('.openrouter-translator-detailed-popup').forEach((popupElement) => {
+      ensureDetailedPopupWithinViewport(popupElement);
+    });
+  });
+}
 
 function removeDetailedPopup(popupElement) {
   if (popupElement) {
@@ -75,16 +231,8 @@ function createSmallIconPopup(x, y) {
   smallIconPopup.style.left = `${x}px`;
   smallIconPopup.style.top = `${y}px`;
 
-  // モバイル等の狭い画面でアイコンが画面外に出ないようにクランプ
-  const margin = 6;
-  const usedWidth = smallIconPopup.offsetWidth;
-  const usedHeight = smallIconPopup.offsetHeight;
-  const maxLeft = window.scrollX + window.innerWidth - usedWidth - margin;
-  const maxTop = window.scrollY + window.innerHeight - usedHeight - margin;
-  const clampedLeft = Math.max(window.scrollX + margin, Math.min(x, maxLeft));
-  const clampedTop = Math.max(window.scrollY + margin, Math.min(y, maxTop));
-  smallIconPopup.style.left = `${clampedLeft}px`;
-  smallIconPopup.style.top = `${clampedTop}px`;
+  // Keep the trigger inside the actually visible viewport, including pages that use visualViewport.
+  clampElementToViewport(smallIconPopup, x, y, 6);
 
   smallIconPopup.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -142,25 +290,19 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
   document.body.appendChild(popupElement);
   popupElement.style.left = `${x}px`;
   popupElement.style.top = `${y}px`;
+  popupElement.style.visibility = 'hidden';
   // Set z-index to bring new popups to the front
   popupElement.style.zIndex = 10000 + popupIdCounter;
 
   // Apply saved size
   getSavedPopupSize((width, height) => {
+    if (!popupElement.isConnected) return;
+
     popupElement.style.width = `${width}px`;
     popupElement.style.height = `${height}px`;
 
-    // 幅・高さ反映後に、ポップアップ位置をビューポート内にクランプ
-    // max-width/max-height により実際の表示サイズは縮む可能性があるため、offsetWidth/offsetHeight を使用
-    const margin = 8; // 画面端からの最小余白
-    const usedWidth = popupElement.offsetWidth;
-    const usedHeight = popupElement.offsetHeight;
-    const maxLeft = window.scrollX + window.innerWidth - usedWidth - margin;
-    const maxTop = window.scrollY + window.innerHeight - usedHeight - margin;
-    const clampedLeft = Math.max(window.scrollX + margin, Math.min(x, maxLeft));
-    const clampedTop = Math.max(window.scrollY + margin, Math.min(y, maxTop));
-    popupElement.style.left = `${clampedLeft}px`;
-    popupElement.style.top = `${clampedTop}px`;
+    ensureDetailedPopupWithinViewport(popupElement, { desiredLeft: x, desiredTop: y });
+    popupElement.style.visibility = '';
   });
 
   // Setup all interaction event listeners for this specific popup
@@ -184,6 +326,7 @@ function requestTranslationForPopup(popupElement, text) {
 
       if (chrome.runtime.lastError) {
         outputArea.textContent = 'エラー: ' + chrome.runtime.lastError.message;
+        ensureDetailedPopupWithinViewport(popupElement);
         return;
       }
 
@@ -198,6 +341,8 @@ function requestTranslationForPopup(popupElement, text) {
       } else {
         outputArea.textContent = '応答がありません。';
       }
+
+      ensureDetailedPopupWithinViewport(popupElement);
     }
   );
 }
@@ -310,8 +455,10 @@ const handlePointerMove = (e) => {
   if (activeInteraction.isDragging) {
     const dx = x - activeInteraction.dragStartX;
     const dy = y - activeInteraction.dragStartY;
-    activeInteraction.element.style.left = `${activeInteraction.popupStartX + dx}px`;
-    activeInteraction.element.style.top = `${activeInteraction.popupStartY + dy}px`;
+    ensureDetailedPopupWithinViewport(activeInteraction.element, {
+      desiredLeft: activeInteraction.popupStartX + dx,
+      desiredTop: activeInteraction.popupStartY + dy,
+    });
   }
 
   if (activeInteraction.isResizing) {
@@ -327,6 +474,7 @@ const handlePointerMove = (e) => {
         activeInteraction.element.style.height = `${height}px`;
       }
     }
+    ensureDetailedPopupWithinViewport(activeInteraction.element);
   }
 };
 document.addEventListener('mousemove', handlePointerMove, { passive: false });
@@ -343,6 +491,7 @@ const handlePointerUp = () => {
 
   if (activeInteraction.isResizing) {
     document.body.style.cursor = 'default';
+    ensureDetailedPopupWithinViewport(activeInteraction.element);
     const width = activeInteraction.element.offsetWidth;
     const height = activeInteraction.element.offsetHeight;
     savePopupSize(width, height); // Saves size for future popups
@@ -369,6 +518,12 @@ document.addEventListener('touchend', handlePointerUp);
 document.addEventListener('touchcancel', () => {
   isPointerDown = false;
 });
+window.addEventListener('resize', scheduleTranslatorViewportClamp);
+window.addEventListener('scroll', scheduleTranslatorViewportClamp, true);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', scheduleTranslatorViewportClamp);
+  window.visualViewport.addEventListener('scroll', scheduleTranslatorViewportClamp);
+}
 
 // Pointer start listener to handle popup dismissal
 const handlePointerStart = (event) => {
@@ -532,8 +687,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     // Fallback to center if selection position is not available
     if (typeof x !== "number" || typeof y !== "number") {
-      x = window.innerWidth / 2 - 200;
-      y = window.innerHeight / 2 - 100;
+      const viewport = getViewportBounds();
+      x = viewport.left + viewport.width / 2 - DEFAULT_POPUP_WIDTH / 2;
+      y = viewport.top + viewport.height / 2 - DEFAULT_POPUP_HEIGHT / 2;
     }
     const newDetailedPopup = createDetailedPopup(x, y, selectedTextGlobal, true);
 

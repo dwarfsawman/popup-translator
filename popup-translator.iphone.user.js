@@ -26,6 +26,8 @@
   // ---------- Configuration ----------
   const DEFAULT_POPUP_WIDTH = 400;
   const DEFAULT_POPUP_HEIGHT = 300;
+  const POPUP_VIEWPORT_MARGIN = 8;
+  const DETAILED_POPUP_SIDE_MARGIN = 72;
   const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
   const MODEL = 'openai/gpt-5.2';
   // iPhone版ではAPIキーをハードコードして使用します。
@@ -91,12 +93,40 @@
 
   function getViewportMetrics() {
     const docEl = document.documentElement;
+    const body = document.body;
+    const fallbackScrollX = window.scrollX || (docEl && docEl.scrollLeft) || (body && body.scrollLeft) || 0;
+    const fallbackScrollY = window.scrollY || (docEl && docEl.scrollTop) || (body && body.scrollTop) || 0;
+
+    try {
+      if (window.parent && window.parent !== window && window.frameElement) {
+        const frameRect = window.frameElement.getBoundingClientRect();
+        const parentViewport = window.parent.visualViewport;
+        const parentLeft = parentViewport ? parentViewport.offsetLeft : 0;
+        const parentTop = parentViewport ? parentViewport.offsetTop : 0;
+        const parentRight = parentLeft + (parentViewport ? parentViewport.width : window.parent.innerWidth);
+        const parentBottom = parentTop + (parentViewport ? parentViewport.height : window.parent.innerHeight);
+        const visibleLeft = Math.max(parentLeft, frameRect.left);
+        const visibleTop = Math.max(parentTop, frameRect.top);
+        const visibleRight = Math.min(parentRight, frameRect.right);
+        const visibleBottom = Math.min(parentBottom, frameRect.bottom);
+
+        if (visibleRight > visibleLeft && visibleBottom > visibleTop) {
+          return {
+            width: visibleRight - visibleLeft,
+            height: visibleBottom - visibleTop,
+            left: fallbackScrollX + visibleLeft - frameRect.left,
+            top: fallbackScrollY + visibleTop - frameRect.top,
+          };
+        }
+      }
+    } catch (_) {}
+
     if (window.visualViewport) {
       const vv = window.visualViewport;
       const widthCandidate = vv.width || window.innerWidth || (docEl && docEl.clientWidth) || (typeof screen !== 'undefined' ? screen.width : 0);
       const heightCandidate = vv.height || window.innerHeight || (docEl && docEl.clientHeight) || (typeof screen !== 'undefined' ? screen.height : 0);
-      const pageLeft = typeof vv.pageLeft === 'number' ? vv.pageLeft : (window.scrollX || 0);
-      const pageTop = typeof vv.pageTop === 'number' ? vv.pageTop : (window.scrollY || 0);
+      const pageLeft = typeof vv.pageLeft === 'number' ? vv.pageLeft : fallbackScrollX;
+      const pageTop = typeof vv.pageTop === 'number' ? vv.pageTop : fallbackScrollY;
       return {
         width: widthCandidate > 0 ? widthCandidate : DEFAULT_POPUP_WIDTH,
         height: heightCandidate > 0 ? heightCandidate : DEFAULT_POPUP_HEIGHT,
@@ -109,8 +139,8 @@
     return {
       width: rawWidth > 0 ? rawWidth : DEFAULT_POPUP_WIDTH,
       height: rawHeight > 0 ? rawHeight : DEFAULT_POPUP_HEIGHT,
-      left: window.scrollX || (docEl && docEl.scrollLeft) || 0,
-      top: window.scrollY || (docEl && docEl.scrollTop) || 0,
+      left: fallbackScrollX,
+      top: fallbackScrollY,
     };
   }
 
@@ -126,35 +156,70 @@
     };
   }
 
+  function normalizeViewportMargins(marginOverride) {
+    if (typeof marginOverride === 'number') {
+      return {
+        top: marginOverride,
+        right: marginOverride,
+        bottom: marginOverride,
+        left: marginOverride,
+      };
+    }
+
+    if (marginOverride && typeof marginOverride === 'object') {
+      return {
+        top: Number.isFinite(marginOverride.top) ? marginOverride.top : POPUP_VIEWPORT_MARGIN,
+        right: Number.isFinite(marginOverride.right) ? marginOverride.right : POPUP_VIEWPORT_MARGIN,
+        bottom: Number.isFinite(marginOverride.bottom) ? marginOverride.bottom : POPUP_VIEWPORT_MARGIN,
+        left: Number.isFinite(marginOverride.left) ? marginOverride.left : POPUP_VIEWPORT_MARGIN,
+      };
+    }
+
+    const viewport = getViewportMetrics();
+    const defaultMargin = viewport.width <= 540 ? 6 : POPUP_VIEWPORT_MARGIN;
+    return {
+      top: defaultMargin,
+      right: defaultMargin,
+      bottom: defaultMargin,
+      left: defaultMargin,
+    };
+  }
+
+  function getDetailedPopupViewportMargins() {
+    return {
+      top: POPUP_VIEWPORT_MARGIN,
+      right: DETAILED_POPUP_SIDE_MARGIN,
+      bottom: POPUP_VIEWPORT_MARGIN,
+      left: DETAILED_POPUP_SIDE_MARGIN,
+    };
+  }
+
   function clampElementToViewport(element, desiredLeft, desiredTop, marginOverride) {
     if (!element) return { left: desiredLeft, top: desiredTop };
     const viewport = getViewportMetrics();
-    const margin = typeof marginOverride === 'number'
-      ? marginOverride
-      : (viewport.width <= 540 ? 6 : 8);
+    const margins = normalizeViewportMargins(marginOverride);
     const elementWidth = element.offsetWidth || element.clientWidth || DEFAULT_POPUP_WIDTH;
     const elementHeight = element.offsetHeight || element.clientHeight || DEFAULT_POPUP_HEIGHT;
-    const viewportWidth = viewport.width > 0 ? viewport.width : elementWidth + margin * 2;
-    const viewportHeight = viewport.height > 0 ? viewport.height : elementHeight + margin * 2;
-    const baseLeft = viewport.left + margin;
-    const baseTop = viewport.top + margin;
-    const maxLeft = Math.max(baseLeft, viewport.left + viewportWidth - elementWidth - margin);
-    const maxTop = Math.max(baseTop, viewport.top + viewportHeight - elementHeight - margin);
+    const viewportWidth = viewport.width > 0 ? viewport.width : elementWidth + margins.left + margins.right;
+    const viewportHeight = viewport.height > 0 ? viewport.height : elementHeight + margins.top + margins.bottom;
+    const baseLeft = viewport.left + margins.left;
+    const baseTop = viewport.top + margins.top;
+    const maxLeft = Math.max(baseLeft, viewport.left + viewportWidth - elementWidth - margins.right);
+    const maxTop = Math.max(baseTop, viewport.top + viewportHeight - elementHeight - margins.bottom);
     const clampedLeft = Math.max(baseLeft, Math.min(desiredLeft, maxLeft));
     const clampedTop = Math.max(baseTop, Math.min(desiredTop, maxTop));
     element.style.left = `${clampedLeft}px`;
     element.style.top = `${clampedTop}px`;
-    return { left: clampedLeft, top: clampedTop, margin, viewport };
+    return { left: clampedLeft, top: clampedTop, margins, viewport };
   }
 
   function ensurePopupWithinViewport(popup, options = {}) {
     if (!popup) return;
     const viewport = getViewportMetrics();
-    const margin = typeof options.margin === 'number'
-      ? options.margin
-      : (viewport.width <= 540 ? 6 : 8);
-    const widthLimit = Math.max(200, viewport.width - margin * 2);
-    const heightLimit = Math.max(150, viewport.height - margin * 2);
+    const margin = options.margin || getDetailedPopupViewportMargins();
+    const margins = normalizeViewportMargins(margin);
+    const widthLimit = Math.max(200, viewport.width - margins.left - margins.right);
+    const heightLimit = Math.max(150, viewport.height - margins.top - margins.bottom);
     if (popup.offsetWidth > widthLimit) {
       popup.style.width = `${widthLimit}px`;
     }
@@ -650,8 +715,10 @@
     if (activeInteraction.isDragging) {
       const dx = x - activeInteraction.dragStartX;
       const dy = y - activeInteraction.dragStartY;
-      activeInteraction.element.style.left = `${activeInteraction.popupStartX + dx}px`;
-      activeInteraction.element.style.top = `${activeInteraction.popupStartY + dy}px`;
+      ensurePopupWithinViewport(activeInteraction.element, {
+        desiredLeft: activeInteraction.popupStartX + dx,
+        desiredTop: activeInteraction.popupStartY + dy,
+      });
     }
     if (activeInteraction.isResizing) {
       if (activeInteraction.resizeType.includes('e')) {
@@ -667,9 +734,13 @@
         const newWidth = activeInteraction.startWidth - dx;
         if (newWidth >= 200) {
           activeInteraction.element.style.width = `${newWidth}px`;
-          activeInteraction.element.style.left = `${activeInteraction.popupStartX + dx}px`;
+          ensurePopupWithinViewport(activeInteraction.element, {
+            desiredLeft: activeInteraction.popupStartX + dx,
+            desiredTop: activeInteraction.popupStartY,
+          });
         }
       }
+      ensurePopupWithinViewport(activeInteraction.element);
     }
   };
 
@@ -1055,6 +1126,8 @@
   } else {
     window.addEventListener('resize', scheduleViewportAdjust);
   }
+  window.addEventListener('resize', scheduleViewportAdjust);
+  window.addEventListener('scroll', scheduleViewportAdjust, true);
 
   // ---------- Global listeners ----------
   document.addEventListener('mousemove', handlePointerMove, { passive: false });
