@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenRouter Inline Translator (Userscript)
 // @namespace    https://github.com/
-// @version      1.0.0
+// @version      1.4.0
 // @description  Translate selected text inline using OpenRouter API. Click the globe icon near selection.
 // @match        *://*/*
 // @match        about:blank
@@ -21,25 +21,25 @@
 // ==/UserScript==
 
 (function () {
-  'use strict';
+  "use strict";
 
   // ---------- Configuration ----------
   const DEFAULT_POPUP_WIDTH = 400;
   const DEFAULT_POPUP_HEIGHT = 300;
   const POPUP_VIEWPORT_MARGIN = 8;
   const DETAILED_POPUP_SIDE_MARGIN = 72;
-  const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-  const MODEL = 'openai/gpt-5.2';
+  const API_URL = "https://openrouter.ai/api/v1/chat/completions";
+  const MODEL = "openai/gpt-5.2";
 
   // ---------- State ----------
   let smallIconPopup = null;
-  let selectedTextGlobal = '';
+  let selectedTextGlobal = "";
   let popupIdCounter = 0;
   let activeInteraction = {
     element: null,
     isDragging: false,
     isResizing: false,
-    resizeType: '',
+    resizeType: "",
     dragStartX: 0,
     dragStartY: 0,
     popupStartX: 0,
@@ -52,10 +52,10 @@
 
   // ---------- Utilities ----------
   function addStyle(css) {
-    if (typeof GM_addStyle === 'function') {
+    if (typeof GM_addStyle === "function") {
       GM_addStyle(css);
     } else {
-      const style = document.createElement('style');
+      const style = document.createElement("style");
       style.textContent = css;
       document.documentElement.appendChild(style);
     }
@@ -74,8 +74,16 @@
   function getViewportBounds() {
     const docEl = document.documentElement;
     const body = document.body;
-    const fallbackScrollX = window.scrollX || (docEl && docEl.scrollLeft) || (body && body.scrollLeft) || 0;
-    const fallbackScrollY = window.scrollY || (docEl && docEl.scrollTop) || (body && body.scrollTop) || 0;
+    const fallbackScrollX =
+      window.scrollX ||
+      (docEl && docEl.scrollLeft) ||
+      (body && body.scrollLeft) ||
+      0;
+    const fallbackScrollY =
+      window.scrollY ||
+      (docEl && docEl.scrollTop) ||
+      (body && body.scrollTop) ||
+      0;
     const visualViewport = window.visualViewport;
 
     try {
@@ -84,8 +92,12 @@
         const parentViewport = window.parent.visualViewport;
         const parentLeft = parentViewport ? parentViewport.offsetLeft : 0;
         const parentTop = parentViewport ? parentViewport.offsetTop : 0;
-        const parentRight = parentLeft + (parentViewport ? parentViewport.width : window.parent.innerWidth);
-        const parentBottom = parentTop + (parentViewport ? parentViewport.height : window.parent.innerHeight);
+        const parentRight =
+          parentLeft +
+          (parentViewport ? parentViewport.width : window.parent.innerWidth);
+        const parentBottom =
+          parentTop +
+          (parentViewport ? parentViewport.height : window.parent.innerHeight);
         const visibleLeft = Math.max(parentLeft, frameRect.left);
         const visibleTop = Math.max(parentTop, frameRect.top);
         const visibleRight = Math.min(parentRight, frameRect.right);
@@ -100,18 +112,28 @@
           };
         }
       }
-    } catch (_) { }
+    } catch (_) {}
 
     if (visualViewport) {
       return {
-        left: typeof visualViewport.pageLeft === 'number'
-          ? visualViewport.pageLeft
-          : fallbackScrollX + (visualViewport.offsetLeft || 0),
-        top: typeof visualViewport.pageTop === 'number'
-          ? visualViewport.pageTop
-          : fallbackScrollY + (visualViewport.offsetTop || 0),
-        width: visualViewport.width || window.innerWidth || (docEl && docEl.clientWidth) || DEFAULT_POPUP_WIDTH,
-        height: visualViewport.height || window.innerHeight || (docEl && docEl.clientHeight) || DEFAULT_POPUP_HEIGHT,
+        left:
+          typeof visualViewport.pageLeft === "number"
+            ? visualViewport.pageLeft
+            : fallbackScrollX + (visualViewport.offsetLeft || 0),
+        top:
+          typeof visualViewport.pageTop === "number"
+            ? visualViewport.pageTop
+            : fallbackScrollY + (visualViewport.offsetTop || 0),
+        width:
+          visualViewport.width ||
+          window.innerWidth ||
+          (docEl && docEl.clientWidth) ||
+          DEFAULT_POPUP_WIDTH,
+        height:
+          visualViewport.height ||
+          window.innerHeight ||
+          (docEl && docEl.clientHeight) ||
+          DEFAULT_POPUP_HEIGHT,
       };
     }
 
@@ -129,13 +151,17 @@
     return {
       left: fallbackScrollX,
       top: fallbackScrollY,
-      width: widthCandidates.length ? Math.min(...widthCandidates) : DEFAULT_POPUP_WIDTH,
-      height: heightCandidates.length ? Math.min(...heightCandidates) : DEFAULT_POPUP_HEIGHT,
+      width: widthCandidates.length
+        ? Math.min(...widthCandidates)
+        : DEFAULT_POPUP_WIDTH,
+      height: heightCandidates.length
+        ? Math.min(...heightCandidates)
+        : DEFAULT_POPUP_HEIGHT,
     };
   }
 
   function normalizeViewportMargins(margin = POPUP_VIEWPORT_MARGIN) {
-    if (typeof margin === 'number') {
+    if (typeof margin === "number") {
       return {
         top: margin,
         right: margin,
@@ -146,8 +172,12 @@
 
     return {
       top: Number.isFinite(margin.top) ? margin.top : POPUP_VIEWPORT_MARGIN,
-      right: Number.isFinite(margin.right) ? margin.right : POPUP_VIEWPORT_MARGIN,
-      bottom: Number.isFinite(margin.bottom) ? margin.bottom : POPUP_VIEWPORT_MARGIN,
+      right: Number.isFinite(margin.right)
+        ? margin.right
+        : POPUP_VIEWPORT_MARGIN,
+      bottom: Number.isFinite(margin.bottom)
+        ? margin.bottom
+        : POPUP_VIEWPORT_MARGIN,
       left: Number.isFinite(margin.left) ? margin.left : POPUP_VIEWPORT_MARGIN,
     };
   }
@@ -161,7 +191,13 @@
     };
   }
 
-  function clampElementToViewport(element, desiredLeft, desiredTop, margin = POPUP_VIEWPORT_MARGIN, options = {}) {
+  function clampElementToViewport(
+    element,
+    desiredLeft,
+    desiredTop,
+    margin = POPUP_VIEWPORT_MARGIN,
+    options = {},
+  ) {
     if (!element) return;
 
     const viewport = getViewportBounds();
@@ -171,9 +207,17 @@
     const elementHeight = element.offsetHeight || rect.height || 0;
     const minLeft = viewport.left + margins.left;
     const minTop = viewport.top + margins.top;
-    const maxLeft = Math.max(minLeft, viewport.left + viewport.width - elementWidth - margins.right);
-    const maxTop = Math.max(minTop, viewport.top + viewport.height - elementHeight - margins.bottom);
-    const left = Number.isFinite(desiredLeft) ? desiredLeft : element.offsetLeft;
+    const maxLeft = Math.max(
+      minLeft,
+      viewport.left + viewport.width - elementWidth - margins.right,
+    );
+    const maxTop = Math.max(
+      minTop,
+      viewport.top + viewport.height - elementHeight - margins.bottom,
+    );
+    const left = Number.isFinite(desiredLeft)
+      ? desiredLeft
+      : element.offsetLeft;
     const top = Number.isFinite(desiredTop) ? desiredTop : element.offsetTop;
     const clampX = options.clampX !== false;
     const clampY = options.clampY !== false;
@@ -187,8 +231,14 @@
 
     const viewport = getViewportBounds();
     const margins = normalizeViewportMargins(margin);
-    const widthLimit = Math.max(200, Math.floor(viewport.width - margins.left - margins.right));
-    const heightLimit = Math.max(100, Math.floor(viewport.height - margins.top - margins.bottom));
+    const widthLimit = Math.max(
+      200,
+      Math.floor(viewport.width - margins.left - margins.right),
+    );
+    const heightLimit = Math.max(
+      100,
+      Math.floor(viewport.height - margins.top - margins.bottom),
+    );
 
     if (popup.offsetWidth > widthLimit) {
       popup.style.width = `${widthLimit}px`;
@@ -203,8 +253,12 @@
 
     const margin = options.margin || getDetailedPopupViewportMargins();
     fitDetailedPopupToViewport(popup, margin);
-    const desiredLeft = Number.isFinite(options.desiredLeft) ? options.desiredLeft : popup.offsetLeft;
-    const desiredTop = Number.isFinite(options.desiredTop) ? options.desiredTop : popup.offsetTop;
+    const desiredLeft = Number.isFinite(options.desiredLeft)
+      ? options.desiredLeft
+      : popup.offsetLeft;
+    const desiredTop = Number.isFinite(options.desiredTop)
+      ? options.desiredTop
+      : popup.offsetTop;
     clampElementToViewport(popup, desiredLeft, desiredTop, margin, {
       clampX: options.clampX !== false,
       clampY: options.clampY === true,
@@ -219,64 +273,71 @@
       viewportClampFrame = null;
 
       if (smallIconPopup && smallIconPopup.isConnected) {
-        clampElementToViewport(smallIconPopup, smallIconPopup.offsetLeft, smallIconPopup.offsetTop, 6);
+        clampElementToViewport(
+          smallIconPopup,
+          smallIconPopup.offsetLeft,
+          smallIconPopup.offsetTop,
+          6,
+        );
       }
 
-      document.querySelectorAll('.openrouter-translator-detailed-popup').forEach((popup) => {
-        ensureDetailedPopupWithinViewport(popup);
-      });
+      document
+        .querySelectorAll(".openrouter-translator-detailed-popup")
+        .forEach((popup) => {
+          ensureDetailedPopupWithinViewport(popup);
+        });
     });
   }
 
   // Backward-compatible wrappers for GM storage (support both GM_* and GM.*)
   async function gmGetValue(key, defaultValue) {
     try {
-      if (typeof GM_getValue === 'function') {
+      if (typeof GM_getValue === "function") {
         const v = GM_getValue(key, defaultValue);
-        return v && typeof v.then === 'function' ? await v : v;
+        return v && typeof v.then === "function" ? await v : v;
       }
-      if (typeof GM !== 'undefined' && GM.getValue) {
+      if (typeof GM !== "undefined" && GM.getValue) {
         return await GM.getValue(key, defaultValue);
       }
-    } catch (_) { }
+    } catch (_) {}
     return defaultValue;
   }
 
   async function gmSetValue(key, value) {
     try {
-      if (typeof GM_setValue === 'function') {
+      if (typeof GM_setValue === "function") {
         const r = GM_setValue(key, value);
-        if (r && typeof r.then === 'function') await r;
+        if (r && typeof r.then === "function") await r;
         return;
       }
-      if (typeof GM !== 'undefined' && GM.setValue) {
+      if (typeof GM !== "undefined" && GM.setValue) {
         await GM.setValue(key, value);
         return;
       }
-    } catch (_) { }
+    } catch (_) {}
   }
 
   async function getSavedPopupSize() {
-    const width = await gmGetValue('popupWidth', DEFAULT_POPUP_WIDTH);
-    const height = await gmGetValue('popupHeight', DEFAULT_POPUP_HEIGHT);
+    const width = await gmGetValue("popupWidth", DEFAULT_POPUP_WIDTH);
+    const height = await gmGetValue("popupHeight", DEFAULT_POPUP_HEIGHT);
     return { width, height };
   }
 
   function savePopupSize(width, height) {
-    gmSetValue('popupWidth', width);
-    gmSetValue('popupHeight', height);
+    gmSetValue("popupWidth", width);
+    gmSetValue("popupHeight", height);
   }
 
   async function getApiKey() {
-    return gmGetValue('openrouterApiKey', '');
+    return gmGetValue("openrouterApiKey", "");
   }
 
   async function setApiKeyInteractively() {
     const current = await getApiKey();
-    const val = window.prompt('Enter your OpenRouter API Key', current || '');
+    const val = window.prompt("Enter your OpenRouter API Key", current || "");
     if (val && val.trim()) {
-      await gmSetValue('openrouterApiKey', val.trim());
-      alert('API key saved.');
+      await gmSetValue("openrouterApiKey", val.trim());
+      alert("API key saved.");
       return true;
     }
     return false;
@@ -284,14 +345,14 @@
 
   function buildSystemPrompt(targetLanguage) {
     switch (targetLanguage) {
-      case 'Japanese':
-        return '以下の文章を日本語訳してください。なるべく直訳は避け自然な日本語にしてください。前置きや説明は省き、翻訳結果だけを出力してください。';
-      case 'English':
-        return 'Please translate the following text to English. Make it natural and avoid literal translation. Output only the translation without any preamble or explanation.';
-      case 'Korean':
-        return '다음 문장을 한국어로 번역해주세요. 직역보다는 자연스러운 한국어로 번역해주세요. 전제나 설명 없이 번역 결과만 출력해주세요.';
-      case 'Chinese':
-        return '请将以下文本翻译成中文。请避免直译，使用自然的中文表达。 只输出翻译结果，不要任何前言或解释。';
+      case "Japanese":
+        return "以下の文章を日本語訳してください。なるべく直訳は避け自然な日本語にしてください。前置きや説明は省き、翻訳結果だけを出力してください。";
+      case "English":
+        return "Please translate the following text to English. Make it natural and avoid literal translation. Output only the translation without any preamble or explanation.";
+      case "Korean":
+        return "다음 문장을 한국어로 번역해주세요. 직역보다는 자연스러운 한국어로 번역해주세요. 전제나 설명 없이 번역 결과만 출력해주세요.";
+      case "Chinese":
+        return "请将以下文本翻译成中文。请避免直译，使用自然的中文表达。 只输出翻译结果，不要任何前言或解释。";
       default:
         return `Please translate the following text to ${targetLanguage}. Make it natural and avoid literal translation. Output only the translation without any preamble or explanation.`;
     }
@@ -299,31 +360,49 @@
 
   function postJsonWithGM(url, headers, body) {
     return new Promise((resolve) => {
-      if (typeof GM_xmlhttpRequest !== 'function') {
+      if (typeof GM_xmlhttpRequest !== "function") {
         // Fallback to fetch if GM_xmlhttpRequest not available
-        fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+        fetch(url, { method: "POST", headers, body: JSON.stringify(body) })
           .then(async (r) => {
             const ok = r.ok;
             let data = null;
-            try { data = await r.json(); } catch (_) { }
+            try {
+              data = await r.json();
+            } catch (_) {}
             resolve({ ok, data, status: r.status, error: ok ? null : data });
           })
-          .catch((err) => resolve({ ok: false, data: null, status: 0, error: err }));
+          .catch((err) =>
+            resolve({ ok: false, data: null, status: 0, error: err }),
+          );
         return;
       }
 
       GM_xmlhttpRequest({
-        method: 'POST',
+        method: "POST",
         url,
-        headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+        headers: Object.assign({ "Content-Type": "application/json" }, headers),
         data: JSON.stringify(body),
         onload: (resp) => {
           let data = null;
-          try { data = JSON.parse(resp.responseText); } catch (_) { }
-          resolve({ ok: resp.status >= 200 && resp.status < 300, data, status: resp.status, error: data });
+          try {
+            data = JSON.parse(resp.responseText);
+          } catch (_) {}
+          resolve({
+            ok: resp.status >= 200 && resp.status < 300,
+            data,
+            status: resp.status,
+            error: data,
+          });
         },
-        onerror: (err) => resolve({ ok: false, data: null, status: 0, error: err }),
-        ontimeout: () => resolve({ ok: false, data: null, status: 0, error: { message: 'timeout' } }),
+        onerror: (err) =>
+          resolve({ ok: false, data: null, status: 0, error: err }),
+        ontimeout: () =>
+          resolve({
+            ok: false,
+            data: null,
+            status: 0,
+            error: { message: "timeout" },
+          }),
       });
     });
   }
@@ -331,23 +410,26 @@
   async function translateTextWithOpenRouter(text, targetLanguage) {
     const apiKey = await getApiKey();
     if (!apiKey) {
-      return { error: 'APIキーが設定されていません。ユーザースクリプトのメニューから設定してください。' };
+      return {
+        error:
+          "APIキーが設定されていません。ユーザースクリプトのメニューから設定してください。",
+      };
     }
     if (!text) {
-      return { error: '翻訳するテキストが入力されていません。' };
+      return { error: "翻訳するテキストが入力されていません。" };
     }
 
     const headers = {
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': location.href,
-      'X-Title': 'OpenRouter Translator Userscript',
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": location.href,
+      "X-Title": "OpenRouter Translator Userscript",
     };
 
     const body = {
       model: MODEL,
       messages: [
-        { role: 'system', content: buildSystemPrompt(targetLanguage) },
-        { role: 'user', content: text }
+        { role: "system", content: buildSystemPrompt(targetLanguage) },
+        { role: "user", content: text },
       ],
       max_tokens: 4000,
       temperature: 0.7,
@@ -363,12 +445,21 @@
         return { error: errorMessage };
       }
       const data = resp.data;
-      if (data && data.choices && data.choices.length > 0 && data.choices[0].message) {
-        return { translatedText: String(data.choices[0].message.content || '').trim() };
+      if (
+        data &&
+        data.choices &&
+        data.choices.length > 0 &&
+        data.choices[0].message
+      ) {
+        return {
+          translatedText: String(data.choices[0].message.content || "").trim(),
+        };
       }
-      return { error: 'APIからの応答形式が正しくありません。' };
+      return { error: "APIからの応答形式が正しくありません。" };
     } catch (err) {
-      return { error: `ネットワークエラーまたはリクエスト失敗: ${err && err.message ? err.message : err}` };
+      return {
+        error: `ネットワークエラーまたはリクエスト失敗: ${err && err.message ? err.message : err}`,
+      };
     }
   }
 
@@ -388,8 +479,8 @@
     removeSmallIconPopup();
     if (!document.body) return;
 
-    const div = document.createElement('div');
-    div.id = 'openrouter-translator-small-icon-popup';
+    const div = document.createElement("div");
+    div.id = "openrouter-translator-small-icon-popup";
     div.innerHTML = `<span class="emoji-trigger" title="翻訳する">🌐</span>`;
 
     document.body.appendChild(div);
@@ -399,49 +490,60 @@
 
     clampElementToViewport(div, x, y, 6);
 
-    div.addEventListener('click', async (event) => {
+    div.addEventListener("click", async (event) => {
       event.stopPropagation();
       if (!selectedTextGlobal) return;
       const iconRect = div.getBoundingClientRect();
-      const popup = createDetailedPopup(iconRect.left + window.scrollX, iconRect.bottom + window.scrollY + 5, selectedTextGlobal, true);
-      if (smallIconPopup) smallIconPopup.style.display = 'none';
+      const popup = createDetailedPopup(
+        iconRect.left + window.scrollX,
+        iconRect.bottom + window.scrollY + 5,
+        selectedTextGlobal,
+        true,
+      );
+      if (smallIconPopup) smallIconPopup.style.display = "none";
 
-      const loading = popup.querySelector('#inlineLoadingIndicator');
-      const out = popup.querySelector('#inlineTranslationOutput');
+      const loading = popup.querySelector("#inlineLoadingIndicator");
+      const out = popup.querySelector("#inlineTranslationOutput");
       try {
         const apiKey = await getApiKey();
         if (!apiKey) {
-          if (out) out.textContent = 'エラー: APIキーが設定されていません。ユーザースクリプトのメニューから設定してください。';
+          if (out)
+            out.textContent =
+              "エラー: APIキーが設定されていません。ユーザースクリプトのメニューから設定してください。";
           ensureDetailedPopupWithinViewport(popup);
           return;
         }
-        const response = await translateTextWithOpenRouter(selectedTextGlobal, 'Japanese');
+        const response = await translateTextWithOpenRouter(
+          selectedTextGlobal,
+          "Japanese",
+        );
         if (!out) return;
         if (response && response.error) {
           out.textContent = `エラー: ${response.error}`;
         } else if (response && response.translatedText) {
           out.textContent = response.translatedText;
         } else {
-          out.textContent = '翻訳結果がありません。';
+          out.textContent = "翻訳結果がありません。";
         }
       } catch (err) {
-        if (out) out.textContent = `エラー: ${err && err.message ? err.message : err}`;
+        if (out)
+          out.textContent = `エラー: ${err && err.message ? err.message : err}`;
       } finally {
-        if (loading) loading.style.display = 'none';
+        if (loading) loading.style.display = "none";
         ensureDetailedPopupWithinViewport(popup);
       }
     });
   }
 
   function createDetailedPopup(x, y, originalText, isLoading = false) {
-    const popup = document.createElement('div');
-    popup.className = 'openrouter-translator-detailed-popup';
+    const popup = document.createElement("div");
+    popup.className = "openrouter-translator-detailed-popup";
     popup.dataset.popupId = `popup-translator-${popupIdCounter++}`;
     popup.innerHTML = `
       <div class="popup-drag-handle" title="ドラッグで移動"></div>
       <button class="popup-close-button" title="閉じる" type="button">&times;</button>
       <div class="translator-popup-content">
-        <div id="inlineLoadingIndicator" class="loading" style="display: ${isLoading ? 'block' : 'none'};">...</div>
+        <div id="inlineLoadingIndicator" class="loading" style="display: ${isLoading ? "block" : "none"};">...</div>
         <div id="inlineTranslationOutput" class="translation-output"></div>
       </div>
       <div class="resize-handle resize-handle-e"></div>
@@ -453,7 +555,7 @@
     document.body.appendChild(popup);
     popup.style.left = `${x}px`;
     popup.style.top = `${y}px`;
-    popup.style.visibility = 'hidden';
+    popup.style.visibility = "hidden";
     popup.style.zIndex = 10000 + popupIdCounter;
 
     getSavedPopupSize().then(({ width, height }) => {
@@ -461,8 +563,11 @@
 
       popup.style.width = `${width}px`;
       popup.style.height = `${height}px`;
-      ensureDetailedPopupWithinViewport(popup, { desiredLeft: x, desiredTop: y });
-      popup.style.visibility = '';
+      ensureDetailedPopupWithinViewport(popup, {
+        desiredLeft: x,
+        desiredTop: y,
+      });
+      popup.style.visibility = "";
     });
 
     setupPopupInteractions(popup);
@@ -482,7 +587,7 @@
     try {
       const sel = win.getSelection && win.getSelection();
       if (!sel || sel.rangeCount === 0) return null;
-      const text = String(sel.toString() || '').trim();
+      const text = String(sel.toString() || "").trim();
       if (!text) return null;
       const range = sel.getRangeAt(0);
       const rect = range.getBoundingClientRect();
@@ -518,7 +623,10 @@
   }
 
   function onFrameSelectionChange(e) {
-    const doc = e.target && e.target.ownerDocument ? e.target.ownerDocument : (e.view && e.view.document);
+    const doc =
+      e.target && e.target.ownerDocument
+        ? e.target.ownerDocument
+        : e.view && e.view.document;
     if (!doc) return;
     const prev = frameSelTimers.get(doc);
     if (prev) clearTimeout(prev);
@@ -540,16 +648,26 @@
       // Access test (throws if cross-origin)
       void doc.documentElement;
       // Attach listeners
-      doc.addEventListener('mousedown', onFramePointerStart, true);
-      doc.addEventListener('touchstart', onFramePointerStart, { passive: true, capture: true });
-      doc.addEventListener('mouseup', onFrameMouseUp, true);
-      doc.addEventListener('touchend', onFrameMouseUp, { passive: true, capture: true });
-      doc.addEventListener('selectionchange', onFrameSelectionChange);
+      doc.addEventListener("mousedown", onFramePointerStart, true);
+      doc.addEventListener("touchstart", onFramePointerStart, {
+        passive: true,
+        capture: true,
+      });
+      doc.addEventListener("mouseup", onFrameMouseUp, true);
+      doc.addEventListener("touchend", onFrameMouseUp, {
+        passive: true,
+        capture: true,
+      });
+      doc.addEventListener("selectionchange", onFrameSelectionChange);
       // Re-attach on navigation/refresh
-      iframe.addEventListener('load', () => {
-        attachedFrames.delete(iframe);
-        attachToAccessibleIframe(iframe);
-      }, { once: true });
+      iframe.addEventListener(
+        "load",
+        () => {
+          attachedFrames.delete(iframe);
+          attachToAccessibleIframe(iframe);
+        },
+        { once: true },
+      );
       attachedFrames.add(iframe);
     } catch (_) {
       // Cross-origin or sandboxed without same-origin: cannot attach.
@@ -558,10 +676,12 @@
 
   function scanIframesIn(root) {
     // Direct iframes
-    const iframes = root.querySelectorAll ? root.querySelectorAll('iframe') : [];
+    const iframes = root.querySelectorAll
+      ? root.querySelectorAll("iframe")
+      : [];
     iframes.forEach((f) => attachToAccessibleIframe(f));
     // Traverse shadow roots (open only)
-    const all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+    const all = root.querySelectorAll ? root.querySelectorAll("*") : [];
     all.forEach((el) => {
       if (el.shadowRoot && !shadowObservers.has(el.shadowRoot)) {
         // Observe additions inside shadow root
@@ -570,7 +690,9 @@
           const mo = new MutationObserver(() => scanIframesIn(el.shadowRoot));
           mo.observe(el.shadowRoot, { childList: true, subtree: true });
           shadowObservers.set(el.shadowRoot, mo);
-        } catch (_) { /* ignore */ }
+        } catch (_) {
+          /* ignore */
+        }
       }
     });
   }
@@ -578,14 +700,17 @@
   function startFrameBridge() {
     // Initial scan after body is ready
     const initial = () => scanIframesIn(document);
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initial, { once: true });
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initial, { once: true });
     } else {
       initial();
     }
     // Observe top-level DOM for new iframes or hosts
     const mo = new MutationObserver(() => scanIframesIn(document));
-    mo.observe(document.documentElement || document, { childList: true, subtree: true });
+    mo.observe(document.documentElement || document, {
+      childList: true,
+      subtree: true,
+    });
     // Periodic safety scan (handles virtualized re-renders)
     setInterval(() => scanIframesIn(document), 1500);
   }
@@ -600,15 +725,19 @@
           void doc.documentElement; // access test
           result.push(f);
         }
-      } catch (_) { /* cross-origin */ }
+      } catch (_) {
+        /* cross-origin */
+      }
     };
     // Top-level iframes
-    document.querySelectorAll('iframe').forEach(tryAdd);
+    document.querySelectorAll("iframe").forEach(tryAdd);
     // Open shadow roots
-    const all = document.querySelectorAll('*');
+    const all = document.querySelectorAll("*");
     all.forEach((el) => {
       if (el.shadowRoot) {
-        try { el.shadowRoot.querySelectorAll('iframe').forEach(tryAdd); } catch (_) {}
+        try {
+          el.shadowRoot.querySelectorAll("iframe").forEach(tryAdd);
+        } catch (_) {}
       }
     });
     return result;
@@ -632,29 +761,33 @@
     const bringToFront = () => {
       popupElement.style.zIndex = 10000 + popupIdCounter++;
     };
-    popupElement.addEventListener('mousedown', bringToFront, true);
-    popupElement.addEventListener('touchstart', bringToFront, { passive: true, capture: true });
+    popupElement.addEventListener("mousedown", bringToFront, true);
+    popupElement.addEventListener("touchstart", bringToFront, {
+      passive: true,
+      capture: true,
+    });
 
     const startDrag = (e) => {
       // Drag only from dedicated handle to avoid conflicts with content selection
-      if (!e.target.closest('.popup-drag-handle')) return;
+      if (!e.target.closest(".popup-drag-handle")) return;
       e.preventDefault();
       const { x, y } = getEventCoords(e);
-    activeInteraction.isDragging = true;
-    activeInteraction.element = popupElement;
-    activeInteraction.dragStartX = x;
-    activeInteraction.dragStartY = y;
+      activeInteraction.isDragging = true;
+      activeInteraction.element = popupElement;
+      activeInteraction.dragStartX = x;
+      activeInteraction.dragStartY = y;
       activeInteraction.popupStartX = popupElement.offsetLeft;
       activeInteraction.popupStartY = popupElement.offsetTop;
-      popupElement.style.userSelect = 'none';
+      popupElement.style.userSelect = "none";
     };
-    const dragHandle = popupElement.querySelector('.popup-drag-handle') || popupElement;
-    dragHandle.addEventListener('mousedown', startDrag, { passive: false });
-    dragHandle.addEventListener('touchstart', startDrag, { passive: false });
+    const dragHandle =
+      popupElement.querySelector(".popup-drag-handle") || popupElement;
+    dragHandle.addEventListener("mousedown", startDrag, { passive: false });
+    dragHandle.addEventListener("touchstart", startDrag, { passive: false });
 
-    const closeButton = popupElement.querySelector('.popup-close-button');
+    const closeButton = popupElement.querySelector(".popup-close-button");
     if (closeButton) {
-      closeButton.addEventListener('click', (e) => {
+      closeButton.addEventListener("click", (e) => {
         e.stopPropagation();
         removeDetailedPopup(popupElement);
       });
@@ -664,10 +797,10 @@
   }
 
   function setupResizeHandlers(popupElement) {
-    const eastResize = popupElement.querySelector('.resize-handle-e');
-    const westResize = popupElement.querySelector('.resize-handle-w');
-    const southResize = popupElement.querySelector('.resize-handle-s');
-    const southEastResize = popupElement.querySelector('.resize-handle-se');
+    const eastResize = popupElement.querySelector(".resize-handle-e");
+    const westResize = popupElement.querySelector(".resize-handle-w");
+    const southResize = popupElement.querySelector(".resize-handle-s");
+    const southEastResize = popupElement.querySelector(".resize-handle-se");
     if (!eastResize || !southResize || !southEastResize) return;
 
     const startResize = (e, type) => {
@@ -686,14 +819,26 @@
       document.body.style.cursor = `${type}-resize`;
     };
 
-    eastResize.addEventListener('mousedown', (e) => startResize(e, 'e'));
-    if (westResize) westResize.addEventListener('mousedown', (e) => startResize(e, 'w'));
-    southResize.addEventListener('mousedown', (e) => startResize(e, 's'));
-    southEastResize.addEventListener('mousedown', (e) => startResize(e, 'se'));
-    eastResize.addEventListener('touchstart', (e) => startResize(e, 'e'), { passive: false });
-    if (westResize) westResize.addEventListener('touchstart', (e) => startResize(e, 'w'), { passive: false });
-    southResize.addEventListener('touchstart', (e) => startResize(e, 's'), { passive: false });
-    southEastResize.addEventListener('touchstart', (e) => startResize(e, 'se'), { passive: false });
+    eastResize.addEventListener("mousedown", (e) => startResize(e, "e"));
+    if (westResize)
+      westResize.addEventListener("mousedown", (e) => startResize(e, "w"));
+    southResize.addEventListener("mousedown", (e) => startResize(e, "s"));
+    southEastResize.addEventListener("mousedown", (e) => startResize(e, "se"));
+    eastResize.addEventListener("touchstart", (e) => startResize(e, "e"), {
+      passive: false,
+    });
+    if (westResize)
+      westResize.addEventListener("touchstart", (e) => startResize(e, "w"), {
+        passive: false,
+      });
+    southResize.addEventListener("touchstart", (e) => startResize(e, "s"), {
+      passive: false,
+    });
+    southEastResize.addEventListener(
+      "touchstart",
+      (e) => startResize(e, "se"),
+      { passive: false },
+    );
   }
 
   const handlePointerMove = (e) => {
@@ -708,15 +853,18 @@
       });
     }
     if (activeInteraction.isResizing) {
-      if (activeInteraction.resizeType.includes('e')) {
-        const width = activeInteraction.startWidth + (x - activeInteraction.startX);
+      if (activeInteraction.resizeType.includes("e")) {
+        const width =
+          activeInteraction.startWidth + (x - activeInteraction.startX);
         if (width >= 200) activeInteraction.element.style.width = `${width}px`;
       }
-      if (activeInteraction.resizeType.includes('s')) {
-        const height = activeInteraction.startHeight + (y - activeInteraction.startY);
-        if (height >= 100) activeInteraction.element.style.height = `${height}px`;
+      if (activeInteraction.resizeType.includes("s")) {
+        const height =
+          activeInteraction.startHeight + (y - activeInteraction.startY);
+        if (height >= 100)
+          activeInteraction.element.style.height = `${height}px`;
       }
-      if (activeInteraction.resizeType.includes('w')) {
+      if (activeInteraction.resizeType.includes("w")) {
         const dx = x - activeInteraction.startX;
         const newWidth = activeInteraction.startWidth - dx;
         if (newWidth >= 200) {
@@ -734,10 +882,10 @@
   const handlePointerUp = () => {
     if (!activeInteraction.element) return;
     if (activeInteraction.isDragging) {
-      activeInteraction.element.style.userSelect = 'auto';
+      activeInteraction.element.style.userSelect = "auto";
     }
     if (activeInteraction.isResizing) {
-      document.body.style.cursor = 'default';
+      document.body.style.cursor = "default";
       ensureDetailedPopupWithinViewport(activeInteraction.element);
       const width = activeInteraction.element.offsetWidth;
       const height = activeInteraction.element.offsetHeight;
@@ -747,7 +895,7 @@
       element: null,
       isDragging: false,
       isResizing: false,
-      resizeType: '',
+      resizeType: "",
       dragStartX: 0,
       dragStartY: 0,
       popupStartX: 0,
@@ -760,13 +908,17 @@
   };
 
   const handlePointerStart = (event) => {
-    if (event.target.closest('.openrouter-translator-detailed-popup')) return;
+    if (event.target.closest(".openrouter-translator-detailed-popup")) return;
     if (smallIconPopup && smallIconPopup.contains(event.target)) return;
     removeSmallIconPopup();
   };
 
   function onSelectionEnd(event) {
-    if (event.target.closest && event.target.closest('.openrouter-translator-detailed-popup')) return;
+    if (
+      event.target.closest &&
+      event.target.closest(".openrouter-translator-detailed-popup")
+    )
+      return;
     if (smallIconPopup && smallIconPopup.contains(event.target)) return;
     setTimeout(() => {
       const currentSelectedText = window.getSelection().toString().trim();
@@ -776,7 +928,10 @@
         if (!selection || selection.rangeCount === 0) return;
         const range = selection.getRangeAt(0);
         const rect = range.getBoundingClientRect();
-        createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
+        createSmallIconPopup(
+          rect.right + window.scrollX - 10,
+          rect.top + window.scrollY - 10,
+        );
       }
     }, 0);
   }
@@ -788,22 +943,31 @@
       const text = window.getSelection().toString().trim();
       if (!text) return;
       const activeEl = document.activeElement;
-      if (activeEl && activeEl.closest && activeEl.closest('.openrouter-translator-detailed-popup')) return;
+      if (
+        activeEl &&
+        activeEl.closest &&
+        activeEl.closest(".openrouter-translator-detailed-popup")
+      )
+        return;
       selectedTextGlobal = text;
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0) return;
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       if (!rect || (rect.width === 0 && rect.height === 0)) return;
-      createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
+      createSmallIconPopup(
+        rect.right + window.scrollX - 10,
+        rect.top + window.scrollY - 10,
+      );
     }, 80);
   }
 
   // ---------- Menu Commands ----------
-  if (typeof GM_registerMenuCommand === 'function') {
-    GM_registerMenuCommand('Set OpenRouter API Key', setApiKeyInteractively);
-    GM_registerMenuCommand('Translate Selection (→日本語)', async () => {
-      let text = (window.getSelection && window.getSelection().toString().trim()) || '';
+  if (typeof GM_registerMenuCommand === "function") {
+    GM_registerMenuCommand("Set OpenRouter API Key", setApiKeyInteractively);
+    GM_registerMenuCommand("Translate Selection (→日本語)", async () => {
+      let text =
+        (window.getSelection && window.getSelection().toString().trim()) || "";
       let x, y;
       if (!text) {
         const found = findSelectionInAnyFrame();
@@ -823,37 +987,43 @@
         }
       }
       if (!text) {
-        alert('No text selected.');
+        alert("No text selected.");
         return;
       }
       selectedTextGlobal = text;
-      if (typeof x !== 'number' || typeof y !== 'number') {
+      if (typeof x !== "number" || typeof y !== "number") {
         const viewport = getViewportBounds();
         x = viewport.left + viewport.width / 2 - DEFAULT_POPUP_WIDTH / 2;
         y = viewport.top + viewport.height / 2 - DEFAULT_POPUP_HEIGHT / 2;
       }
       const popup = createDetailedPopup(x, y, selectedTextGlobal, true);
-      const loading = popup.querySelector('#inlineLoadingIndicator');
-      const out = popup.querySelector('#inlineTranslationOutput');
+      const loading = popup.querySelector("#inlineLoadingIndicator");
+      const out = popup.querySelector("#inlineTranslationOutput");
       try {
         const apiKey = await getApiKey();
         if (!apiKey) {
-          if (out) out.textContent = 'エラー: APIキーが設定されていません。ユーザースクリプトのメニューから設定してください。';
+          if (out)
+            out.textContent =
+              "エラー: APIキーが設定されていません。ユーザースクリプトのメニューから設定してください。";
           return;
         }
-        const response = await translateTextWithOpenRouter(selectedTextGlobal, 'Japanese');
+        const response = await translateTextWithOpenRouter(
+          selectedTextGlobal,
+          "Japanese",
+        );
         if (!out) return;
         if (response && response.error) {
           out.textContent = `エラー: ${response.error}`;
         } else if (response && response.translatedText) {
           out.textContent = response.translatedText;
         } else {
-          out.textContent = '翻訳結果がありません。';
+          out.textContent = "翻訳結果がありません。";
         }
       } catch (err) {
-        if (out) out.textContent = `エラー: ${err && err.message ? err.message : err}`;
+        if (out)
+          out.textContent = `エラー: ${err && err.message ? err.message : err}`;
       } finally {
-        if (loading) loading.style.display = 'none';
+        if (loading) loading.style.display = "none";
         ensureDetailedPopupWithinViewport(popup);
       }
     });
@@ -1058,30 +1228,33 @@
 `);
 
   // Start scanning for same-origin iframes (e.g., Readest viewer)
-  try { startFrameBridge(); } catch (_) {}
+  try {
+    startFrameBridge();
+  } catch (_) {}
 
   // ---------- Global listeners ----------
-  document.addEventListener('mousemove', handlePointerMove, { passive: false });
-  document.addEventListener('touchmove', handlePointerMove, { passive: false });
-  document.addEventListener('mouseup', handlePointerUp);
-  document.addEventListener('touchend', handlePointerUp);
-  window.addEventListener('resize', scheduleViewportAdjust);
-  window.addEventListener('scroll', scheduleViewportAdjust, true);
+  document.addEventListener("mousemove", handlePointerMove, { passive: false });
+  document.addEventListener("touchmove", handlePointerMove, { passive: false });
+  document.addEventListener("mouseup", handlePointerUp);
+  document.addEventListener("touchend", handlePointerUp);
+  window.addEventListener("resize", scheduleViewportAdjust);
+  window.addEventListener("scroll", scheduleViewportAdjust, true);
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', scheduleViewportAdjust);
-    window.visualViewport.addEventListener('scroll', scheduleViewportAdjust);
+    window.visualViewport.addEventListener("resize", scheduleViewportAdjust);
+    window.visualViewport.addEventListener("scroll", scheduleViewportAdjust);
   }
-  document.addEventListener('mousedown', handlePointerStart);
-  document.addEventListener('touchstart', handlePointerStart);
-  document.addEventListener('mouseup', onSelectionEnd);
-  document.addEventListener('touchend', onSelectionEnd);
-  document.addEventListener('selectionchange', onSelectionChange);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      const popups = document.querySelectorAll('.openrouter-translator-detailed-popup');
+  document.addEventListener("mousedown", handlePointerStart);
+  document.addEventListener("touchstart", handlePointerStart);
+  document.addEventListener("mouseup", onSelectionEnd);
+  document.addEventListener("touchend", onSelectionEnd);
+  document.addEventListener("selectionchange", onSelectionChange);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      const popups = document.querySelectorAll(
+        ".openrouter-translator-detailed-popup",
+      );
       const last = popups[popups.length - 1];
       if (last) last.remove();
     }
   });
-
 })();
