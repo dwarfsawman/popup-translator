@@ -131,7 +131,7 @@ function getDetailedPopupViewportMargins() {
   };
 }
 
-function clampElementToViewport(element, desiredLeft, desiredTop, margin = POPUP_VIEWPORT_MARGIN) {
+function clampElementToViewport(element, desiredLeft, desiredTop, margin = POPUP_VIEWPORT_MARGIN, options = {}) {
   if (!element) return;
 
   const viewport = getViewportBounds();
@@ -145,9 +145,11 @@ function clampElementToViewport(element, desiredLeft, desiredTop, margin = POPUP
   const maxTop = Math.max(minTop, viewport.top + viewport.height - elementHeight - margins.bottom);
   const left = Number.isFinite(desiredLeft) ? desiredLeft : element.offsetLeft;
   const top = Number.isFinite(desiredTop) ? desiredTop : element.offsetTop;
+  const clampX = options.clampX !== false;
+  const clampY = options.clampY !== false;
 
-  element.style.left = `${Math.max(minLeft, Math.min(left, maxLeft))}px`;
-  element.style.top = `${Math.max(minTop, Math.min(top, maxTop))}px`;
+  element.style.left = `${clampX ? Math.max(minLeft, Math.min(left, maxLeft)) : left}px`;
+  element.style.top = `${clampY ? Math.max(minTop, Math.min(top, maxTop)) : top}px`;
 }
 
 function fitDetailedPopupToViewport(popupElement, margin = POPUP_VIEWPORT_MARGIN) {
@@ -173,7 +175,10 @@ function ensureDetailedPopupWithinViewport(popupElement, options = {}) {
   fitDetailedPopupToViewport(popupElement, margin);
   const desiredLeft = Number.isFinite(options.desiredLeft) ? options.desiredLeft : popupElement.offsetLeft;
   const desiredTop = Number.isFinite(options.desiredTop) ? options.desiredTop : popupElement.offsetTop;
-  clampElementToViewport(popupElement, desiredLeft, desiredTop, margin);
+  clampElementToViewport(popupElement, desiredLeft, desiredTop, margin, {
+    clampX: options.clampX !== false,
+    clampY: options.clampY === true,
+  });
 }
 
 let viewportClampFrame = null;
