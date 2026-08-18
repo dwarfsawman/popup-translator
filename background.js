@@ -1,6 +1,8 @@
 /* global chrome */
 // background.js - OpenRouter API対応
 
+const DEFAULT_MODEL = "openai/gpt-5.6-luna";
+
 // Create context menu on install
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -25,7 +27,12 @@ async function getApiKey() {
   return result.openrouterApiKey;
 }
 
-async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
+async function getModel() {
+  const result = await chrome.storage.local.get(["openrouterModel"]);
+  return result.openrouterModel || DEFAULT_MODEL;
+}
+
+async function translateTextWithOpenRouter(text, targetLanguage, apiKey, model) {
   if (!apiKey) {
     return {
       error: "APIキーが設定されていません。ポップアップから設定してください。",
@@ -70,7 +77,7 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey) {
         "X-Title": "OpenRouter Translator Extension",
       },
       body: JSON.stringify({
-        model: "x-ai/grok-4.3",
+        model: model || DEFAULT_MODEL,
         messages: [
           {
             role: "system",
@@ -115,10 +122,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "translate") {
     (async () => {
       const apiKey = await getApiKey();
+      const model = await getModel();
       const result = await translateTextWithOpenRouter(
         request.text,
         request.targetLanguage,
         apiKey,
+        model,
       );
       sendResponse(result);
     })();

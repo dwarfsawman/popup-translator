@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenRouter Inline Translator (Userscript)
 // @namespace    https://github.com/
-// @version      1.4.0
+// @version      1.5.0
 // @description  Translate selected text inline using OpenRouter API. Click the globe icon near selection.
 // @match        *://*/*
 // @match        about:blank
@@ -29,7 +29,15 @@
   const POPUP_VIEWPORT_MARGIN = 8;
   const DETAILED_POPUP_SIDE_MARGIN = 72;
   const API_URL = "https://openrouter.ai/api/v1/chat/completions";
-  const MODEL = "openai/gpt-5.2";
+  const DEFAULT_MODEL = "openai/gpt-5.6-luna";
+  const MODEL_STORAGE_KEY = "openrouterModel";
+  const AVAILABLE_MODELS = [
+    "openai/gpt-5.6-luna",
+    "openai/gpt-5.2",
+    "x-ai/grok-4.3",
+    "anthropic/claude-sonnet-4",
+    "google/gemini-2.5-pro-preview",
+  ];
 
   // ---------- State ----------
   let smallIconPopup = null;
@@ -332,15 +340,82 @@
     return gmGetValue("openrouterApiKey", "");
   }
 
-  async function setApiKeyInteractively() {
-    const current = await getApiKey();
-    const val = window.prompt("Enter your OpenRouter API Key", current || "");
-    if (val && val.trim()) {
-      await gmSetValue("openrouterApiKey", val.trim());
-      alert("API key saved.");
-      return true;
+  async function getModel() {
+    return gmGetValue(MODEL_STORAGE_KEY, DEFAULT_MODEL);
+  }
+
+  function updateCurrentModelLabel(labelEl, model) {
+    labelEl.textContent = `現在のモデル: ${model}`;
+  }
+
+  async function openSettingsDialog() {
+    const existing = document.getElementById("openrouter-translator-settings-overlay");
+    if (existing) existing.remove();
+
+    const currentApiKey = await getApiKey();
+    const currentModel = await getModel();
+
+    const overlay = document.createElement("div");
+    overlay.id = "openrouter-translator-settings-overlay";
+    overlay.innerHTML = `
+      <div class="openrouter-translator-settings-dialog" role="dialog" aria-labelledby="openrouter-translator-settings-title">
+        <h2 id="openrouter-translator-settings-title">OpenRouter 設定</h2>
+        <label for="openrouter-translator-settings-api-key">OpenRouter APIキー</label>
+        <input type="password" id="openrouter-translator-settings-api-key" placeholder="OpenRouter APIキーを入力" autocomplete="off">
+        <label for="openrouter-translator-settings-model">モデル</label>
+        <select id="openrouter-translator-settings-model">
+          ${AVAILABLE_MODELS.map(
+            (model) =>
+              `<option value="${model}"${model === currentModel ? " selected" : ""}>${model}</option>`,
+          ).join("")}
+        </select>
+        <p id="openrouter-translator-settings-current-model" class="current-model-label"></p>
+        <div class="openrouter-translator-settings-actions">
+          <button type="button" id="openrouter-translator-settings-cancel">キャンセル</button>
+          <button type="button" id="openrouter-translator-settings-save">保存</button>
+        </div>
+      </div>
+    `;
+
+    document.documentElement.appendChild(overlay);
+
+    const apiKeyInput = overlay.querySelector("#openrouter-translator-settings-api-key");
+    const modelSelect = overlay.querySelector("#openrouter-translator-settings-model");
+    const currentModelLabel = overlay.querySelector("#openrouter-translator-settings-current-model");
+    const saveButton = overlay.querySelector("#openrouter-translator-settings-save");
+    const cancelButton = overlay.querySelector("#openrouter-translator-settings-cancel");
+    const dialog = overlay.querySelector(".openrouter-translator-settings-dialog");
+
+    apiKeyInput.value = currentApiKey || "";
+    updateCurrentModelLabel(currentModelLabel, modelSelect.value);
+
+    modelSelect.addEventListener("change", () => {
+      updateCurrentModelLabel(currentModelLabel, modelSelect.value);
+    });
+
+    function closeDialog() {
+      overlay.remove();
     }
-    return false;
+
+    cancelButton.addEventListener("click", closeDialog);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeDialog();
+    });
+    dialog.addEventListener("click", (event) => event.stopPropagation());
+
+    saveButton.addEventListener("click", async () => {
+      const apiKey = apiKeyInput.value.trim();
+      const model = modelSelect.value;
+      if (!apiKey) {
+        alert("APIキーを入力してください。");
+        return;
+      }
+      await gmSetValue("openrouterApiKey", apiKey);
+      await gmSetValue(MODEL_STORAGE_KEY, model);
+      updateCurrentModelLabel(currentModelLabel, model);
+      alert("設定が保存されました。");
+      closeDialog();
+    });
   }
 
   function buildSystemPrompt(targetLanguage) {
@@ -419,6 +494,8 @@
       return { error: "翻訳するテキストが入力されていません。" };
     }
 
+    const model = await getModel();
+
     const headers = {
       Authorization: `Bearer ${apiKey}`,
       "HTTP-Referer": location.href,
@@ -426,7 +503,7 @@
     };
 
     const body = {
-      model: MODEL,
+      model,
       messages: [
         { role: "system", content: buildSystemPrompt(targetLanguage) },
         { role: "user", content: text },
@@ -964,7 +1041,7 @@
 
   // ---------- Menu Commands ----------
   if (typeof GM_registerMenuCommand === "function") {
-    GM_registerMenuCommand("Set OpenRouter API Key", setApiKeyInteractively);
+    GM_registerMenuCommand("Settings (API Key & Model)", openSettingsDialog);
     GM_registerMenuCommand("Translate Selection (→日本語)", async () => {
       let text =
         (window.getSelection && window.getSelection().toString().trim()) || "";
@@ -1225,6 +1302,96 @@
 .openrouter-translator-detailed-popup .translation-output::-webkit-scrollbar-thumb:hover { background-color: #818c99; }
 .openrouter-translator-detailed-popup .translation-output::-webkit-scrollbar-button { display: none; }
   .openrouter-translator-detailed-popup .translation-output::-webkit-scrollbar-corner { background: transparent; display: none; }
+
+#openrouter-translator-settings-overlay {
+  all: unset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background-color: rgba(0, 0, 0, 0.45);
+  font-family: "Noto Sans JP", sans-serif !important;
+}
+
+.openrouter-translator-settings-dialog {
+  all: unset;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  border-radius: 8px;
+  background-color: #fff;
+  color: #333;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  box-sizing: border-box;
+}
+
+.openrouter-translator-settings-dialog h2 {
+  all: unset;
+  display: block;
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.openrouter-translator-settings-dialog label {
+  all: unset;
+  display: block;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.openrouter-translator-settings-dialog input,
+.openrouter-translator-settings-dialog select {
+  all: unset;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: #fff;
+  color: #333;
+}
+
+.openrouter-translator-settings-dialog .current-model-label {
+  all: unset;
+  display: block;
+  margin: 0;
+  font-size: 13px;
+  color: #555;
+}
+
+.openrouter-translator-settings-actions {
+  all: unset;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.openrouter-translator-settings-actions button {
+  all: unset;
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: center;
+}
+
+#openrouter-translator-settings-cancel {
+  background-color: #eee;
+  color: #333;
+}
+
+#openrouter-translator-settings-save {
+  background-color: #5cb85c;
+  color: #fff;
+}
 `);
 
   // Start scanning for same-origin iframes (e.g., Readest viewer)
@@ -1250,6 +1417,13 @@
   document.addEventListener("selectionchange", onSelectionChange);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      const settingsOverlay = document.getElementById(
+        "openrouter-translator-settings-overlay",
+      );
+      if (settingsOverlay) {
+        settingsOverlay.remove();
+        return;
+      }
       const popups = document.querySelectorAll(
         ".openrouter-translator-detailed-popup",
       );

@@ -30,11 +30,18 @@ h1 {
 }
 
 .option input[type="text"],
-.option input[type="password"] {
+.option input[type="password"],
+.option select {
   width: calc(100% - 22px);
   padding: 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
+}
+
+.current-model {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #555;
 }
 
 button {
