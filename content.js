@@ -5,6 +5,13 @@ let selectedTextGlobal = '';
 let popupIdCounter = 0;
 let isPointerDown = false;
 let lastPointerPosition = { x: null, y: null };
+let selectionUpdateTimer = null;
+let lastSelectionSignature = '';
+const SELECTION_STABLE_DELAY_MS = 220;
+const SELECTION_END_DELAY_MS = 120;
+const SMALL_ICON_GAP = 8;
+const SMALL_ICON_APPROX_WIDTH = 40;
+const SMALL_ICON_APPROX_HEIGHT = 32;
 // Track the active interaction (drag/resize) and the element being interacted with.
 let activeInteraction = {
   element: null,
@@ -219,6 +226,116 @@ function removePopups() {
   // removeDetailedPopup();
 }
 
+function getRangeDisplayRect(range) {
+  if (!range) return null;
+
+  try {
+    const rect = range.getBoundingClientRect();
+    if (rect && (rect.width > 0 || rect.height > 0)) {
+      return rect;
+    }
+  } catch (error) {
+    // Ignore invalid ranges while the browser is updating the selection.
+  }
+
+  if (typeof range.getClientRects === 'function') {
+    const rects = Array.from(range.getClientRects());
+    for (const rect of rects) {
+      if (rect && (rect.width > 0 || rect.height > 0)) {
+        return rect;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getSelectionSignature(selection) {
+  if (!selection || selection.rangeCount === 0) {
+    return '';
+  }
+
+  try {
+    const range = selection.getRangeAt(0);
+    return [
+      range.startContainer,
+      range.startOffset,
+      range.endContainer,
+      range.endOffset,
+    ].join(':');
+  } catch (error) {
+    return selection.toString();
+  }
+}
+
+function getSmallIconPopupPosition(rect) {
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  const viewport = getViewportBounds();
+  const viewportTop = viewport.top;
+
+  let x = rect.left + scrollX + rect.width / 2 - SMALL_ICON_APPROX_WIDTH / 2;
+  let y = rect.top + scrollY - SMALL_ICON_APPROX_HEIGHT - SMALL_ICON_GAP;
+
+  // Prefer above the selection so left/right drag handles stay unobstructed.
+  if (y < viewportTop + 6) {
+    y = rect.bottom + scrollY + SMALL_ICON_GAP;
+  }
+
+  return { x, y };
+}
+
+function clearSelectionUpdateTimer() {
+  if (selectionUpdateTimer) {
+    clearTimeout(selectionUpdateTimer);
+    selectionUpdateTimer = null;
+  }
+}
+
+function showSmallIconPopupIfReady() {
+  if (isPointerDown) {
+    return;
+  }
+
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    removeSmallIconPopup();
+    return;
+  }
+
+  const text = selection.toString().trim();
+  if (!text) {
+    selectedTextGlobal = '';
+    removeSmallIconPopup();
+    return;
+  }
+
+  const activeEl = document.activeElement;
+  if (activeEl && activeEl.closest && activeEl.closest('.openrouter-translator-detailed-popup')) {
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
+  const rect = getRangeDisplayRect(range);
+  if (!rect) {
+    return;
+  }
+
+  selectedTextGlobal = text;
+  const { x, y } = getSmallIconPopupPosition(rect);
+  createSmallIconPopup(x, y);
+}
+
+function scheduleSmallIconPopupUpdate(delay = SELECTION_STABLE_DELAY_MS) {
+  clearSelectionUpdateTimer();
+  removeSmallIconPopup();
+
+  selectionUpdateTimer = setTimeout(() => {
+    selectionUpdateTimer = null;
+    showSmallIconPopupIfReady();
+  }, delay);
+}
+
 // 小さな翻訳アイコンを作成・表示する関数
 function createSmallIconPopup(x, y) {
   // 既存の小アイコンがあれば置き換える（重複表示を避ける）
@@ -235,9 +352,16 @@ function createSmallIconPopup(x, y) {
   document.body.appendChild(smallIconPopup);
   smallIconPopup.style.left = `${x}px`;
   smallIconPopup.style.top = `${y}px`;
+  smallIconPopup.classList.remove('icon-interactive');
 
   // Keep the trigger inside the actually visible viewport, including pages that use visualViewport.
   clampElementToViewport(smallIconPopup, x, y, 6);
+
+  requestAnimationFrame(() => {
+    if (smallIconPopup && smallIconPopup.isConnected) {
+      smallIconPopup.classList.add('icon-interactive');
+    }
+  });
 
   smallIconPopup.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -558,6 +682,9 @@ const handlePointerStart = (event) => {
     return;
   }
 
+  clearSelectionUpdateTimer();
+  lastSelectionSignature = '';
+
   // If the tap/click is outside both popups, remove the smallIconPopup.
   removeSmallIconPopup();
 };
@@ -574,51 +701,35 @@ const handleSelectionEnd = (event) => {
     return;
   }
 
-  // Use a timeout to ensure selection is registered
-  setTimeout(() => {
-    const currentSelectedText = window.getSelection().toString().trim();
-    if (currentSelectedText.length > 0) {
-      selectedTextGlobal = currentSelectedText;
-      const selection = window.getSelection();
-      if (selection.rangeCount === 0) return; // No selection range
-
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-
-      createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
-    }
-  }, 0);
+  scheduleSmallIconPopupUpdate(SELECTION_END_DELAY_MS);
 };
 document.addEventListener('mouseup', handleSelectionEnd);
 document.addEventListener('touchend', handleSelectionEnd);
 
 // Android等で long-press 選択時に touchend が届かない場合に備え、selectionchange でも補足
-let selectionChangeTimer = null;
 document.addEventListener('selectionchange', () => {
-  if (selectionChangeTimer) {
-    clearTimeout(selectionChangeTimer);
-    selectionChangeTimer = null;
-  }
-
   if (isPointerDown) {
+    clearSelectionUpdateTimer();
+    removeSmallIconPopup();
     return;
   }
 
-  selectionChangeTimer = setTimeout(() => {
-    const text = window.getSelection().toString().trim();
-    if (!text) return;
-    // �|�b�v�A�b�v��̑���ɂ�� selection �ɂ͔������Ȃ�
-    const activeEl = document.activeElement;
-    if (activeEl && activeEl.closest && activeEl.closest('.openrouter-translator-detailed-popup')) return;
+  const selection = window.getSelection();
+  const text = selection ? selection.toString().trim() : '';
+  if (!text) {
+    lastSelectionSignature = '';
+    clearSelectionUpdateTimer();
+    removeSmallIconPopup();
+    return;
+  }
 
-    selectedTextGlobal = text;
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-    if (!rect || (rect.width === 0 && rect.height === 0)) return;
-    createSmallIconPopup(rect.right + window.scrollX - 10, rect.top + window.scrollY - 10);
-  }, 80);
+  const signature = getSelectionSignature(selection);
+  if (signature === lastSelectionSignature) {
+    return;
+  }
+
+  lastSelectionSignature = signature;
+  scheduleSmallIconPopupUpdate(SELECTION_STABLE_DELAY_MS);
 });
 
 const handleKeyboardTranslationShortcut = (event) => {
@@ -648,11 +759,11 @@ const handleKeyboardTranslationShortcut = (event) => {
   let popupY = Number.isFinite(lastPointerPosition.y) ? lastPointerPosition.y + KEYBOARD_POPUP_OFFSET : null;
 
   if ((popupX === null || popupY === null) && selection && selection.rangeCount > 0) {
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-    if (rect && (rect.width > 0 || rect.height > 0)) {
-      popupX = rect.right + window.scrollX - 10;
-      popupY = rect.top + window.scrollY - 10;
+    const rect = getRangeDisplayRect(selection.getRangeAt(0));
+    if (rect) {
+      const iconPosition = getSmallIconPopupPosition(rect);
+      popupX = iconPosition.x;
+      popupY = iconPosition.y;
     }
   }
 
@@ -682,12 +793,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     let x, y;
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      // If the selection is visible, use its position
-      if (rect && rect.width > 0 && rect.height > 0) {
-        x = rect.right + window.scrollX - 10;
-        y = rect.top + window.scrollY - 10;
+      const rect = getRangeDisplayRect(selection.getRangeAt(0));
+      if (rect) {
+        const iconPosition = getSmallIconPopupPosition(rect);
+        x = iconPosition.x;
+        y = iconPosition.y;
       }
     }
     // Fallback to center if selection position is not available
