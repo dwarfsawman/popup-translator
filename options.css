@@ -30,8 +30,7 @@ h1 {
 }
 
 .option input[type="text"],
-.option input[type="password"],
-.option select {
+.option input[type="password"] {
   width: calc(100% - 22px);
   padding: 10px;
   border: 1px solid #ddd;

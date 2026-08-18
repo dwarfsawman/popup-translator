@@ -31,13 +31,6 @@
   const API_URL = "https://openrouter.ai/api/v1/chat/completions";
   const DEFAULT_MODEL = "openai/gpt-5.6-luna";
   const MODEL_STORAGE_KEY = "openrouterModel";
-  const AVAILABLE_MODELS = [
-    "openai/gpt-5.6-luna",
-    "openai/gpt-5.2",
-    "x-ai/grok-4.3",
-    "anthropic/claude-sonnet-4",
-    "google/gemini-2.5-pro-preview",
-  ];
 
   // ---------- State ----------
   let smallIconPopup = null;
@@ -344,8 +337,12 @@
     return gmGetValue(MODEL_STORAGE_KEY, DEFAULT_MODEL);
   }
 
-  function updateCurrentModelLabel(labelEl, model) {
-    labelEl.textContent = `現在のモデル: ${model}`;
+  function resolveModel(value) {
+    return value.trim() || DEFAULT_MODEL;
+  }
+
+  function updateCurrentModelLabel(labelEl, value) {
+    labelEl.textContent = `現在のモデル: ${resolveModel(value)}`;
   }
 
   async function openSettingsDialog() {
@@ -363,12 +360,7 @@
         <label for="openrouter-translator-settings-api-key">OpenRouter APIキー</label>
         <input type="password" id="openrouter-translator-settings-api-key" placeholder="OpenRouter APIキーを入力" autocomplete="off">
         <label for="openrouter-translator-settings-model">モデル</label>
-        <select id="openrouter-translator-settings-model">
-          ${AVAILABLE_MODELS.map(
-            (model) =>
-              `<option value="${model}"${model === currentModel ? " selected" : ""}>${model}</option>`,
-          ).join("")}
-        </select>
+        <input type="text" id="openrouter-translator-settings-model" placeholder="${DEFAULT_MODEL}" autocomplete="off">
         <p id="openrouter-translator-settings-current-model" class="current-model-label"></p>
         <div class="openrouter-translator-settings-actions">
           <button type="button" id="openrouter-translator-settings-cancel">キャンセル</button>
@@ -380,17 +372,18 @@
     document.documentElement.appendChild(overlay);
 
     const apiKeyInput = overlay.querySelector("#openrouter-translator-settings-api-key");
-    const modelSelect = overlay.querySelector("#openrouter-translator-settings-model");
+    const modelInput = overlay.querySelector("#openrouter-translator-settings-model");
     const currentModelLabel = overlay.querySelector("#openrouter-translator-settings-current-model");
     const saveButton = overlay.querySelector("#openrouter-translator-settings-save");
     const cancelButton = overlay.querySelector("#openrouter-translator-settings-cancel");
     const dialog = overlay.querySelector(".openrouter-translator-settings-dialog");
 
     apiKeyInput.value = currentApiKey || "";
-    updateCurrentModelLabel(currentModelLabel, modelSelect.value);
+    modelInput.value = currentModel;
+    updateCurrentModelLabel(currentModelLabel, modelInput.value);
 
-    modelSelect.addEventListener("change", () => {
-      updateCurrentModelLabel(currentModelLabel, modelSelect.value);
+    modelInput.addEventListener("input", () => {
+      updateCurrentModelLabel(currentModelLabel, modelInput.value);
     });
 
     function closeDialog() {
@@ -405,7 +398,7 @@
 
     saveButton.addEventListener("click", async () => {
       const apiKey = apiKeyInput.value.trim();
-      const model = modelSelect.value;
+      const model = resolveModel(modelInput.value);
       if (!apiKey) {
         alert("APIキーを入力してください。");
         return;

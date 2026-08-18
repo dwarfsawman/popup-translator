@@ -3,17 +3,21 @@ const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 
 document.addEventListener("DOMContentLoaded", () => {
   const apiKeyInput = document.getElementById("apiKey");
-  const modelSelect = document.getElementById("model");
+  const modelInput = document.getElementById("model");
   const currentModelDisplay = document.getElementById("currentModelDisplay");
   const saveButton = document.getElementById("saveButton");
   const statusDiv = document.getElementById("status");
 
-  function updateCurrentModelDisplay(model) {
-    currentModelDisplay.textContent = `現在のモデル: ${model}`;
+  function resolveModel(value) {
+    return value.trim() || DEFAULT_MODEL;
   }
 
-  modelSelect.addEventListener("change", () => {
-    updateCurrentModelDisplay(modelSelect.value);
+  function updateCurrentModelDisplay(value) {
+    currentModelDisplay.textContent = `現在のモデル: ${resolveModel(value)}`;
+  }
+
+  modelInput.addEventListener("input", () => {
+    updateCurrentModelDisplay(modelInput.value);
   });
 
   // 保存されている設定を読み込んで表示
@@ -22,17 +26,18 @@ document.addEventListener("DOMContentLoaded", () => {
       apiKeyInput.value = result.openrouterApiKey;
     }
     const model = result.openrouterModel || DEFAULT_MODEL;
-    modelSelect.value = model;
+    modelInput.value = model;
     updateCurrentModelDisplay(model);
   });
 
   saveButton.addEventListener("click", () => {
     const apiKey = apiKeyInput.value.trim();
-    const model = modelSelect.value;
+    const model = resolveModel(modelInput.value);
     if (apiKey) {
       chrome.storage.local.set(
         { openrouterApiKey: apiKey, openrouterModel: model },
         () => {
+          modelInput.value = model;
           updateCurrentModelDisplay(model);
           statusDiv.textContent = "設定が保存されました。";
           statusDiv.style.color = "green";

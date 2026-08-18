@@ -31,13 +31,6 @@
   const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
   const DEFAULT_MODEL = 'openai/gpt-5.6-luna';
   const MODEL_STORAGE_KEY = 'openrouterModel';
-  const AVAILABLE_MODELS = [
-    'openai/gpt-5.6-luna',
-    'openai/gpt-5.2',
-    'x-ai/grok-4.3',
-    'anthropic/claude-sonnet-4',
-    'google/gemini-2.5-pro-preview',
-  ];
   // iPhone版ではAPIキーをハードコードして使用します。
   // 必ずあなたのOpenRouter APIキーに置き換えてください。
   // 例: const HARDCODED_API_KEY = 'sk-or-v1-...';
@@ -287,8 +280,12 @@
     return gmGetValue(MODEL_STORAGE_KEY, DEFAULT_MODEL);
   }
 
-  function updateCurrentModelLabel(labelEl, model) {
-    labelEl.textContent = `現在のモデル: ${model}`;
+  function resolveModel(value) {
+    return value.trim() || DEFAULT_MODEL;
+  }
+
+  function updateCurrentModelLabel(labelEl, value) {
+    labelEl.textContent = `現在のモデル: ${resolveModel(value)}`;
   }
 
   async function openModelSettingsDialog() {
@@ -303,12 +300,7 @@
       <div class="openrouter-translator-settings-dialog" role="dialog" aria-labelledby="openrouter-translator-settings-title">
         <h2 id="openrouter-translator-settings-title">OpenRouter 設定</h2>
         <label for="openrouter-translator-settings-model">モデル</label>
-        <select id="openrouter-translator-settings-model">
-          ${AVAILABLE_MODELS.map(
-            (model) =>
-              `<option value="${model}"${model === currentModel ? ' selected' : ''}>${model}</option>`,
-          ).join('')}
-        </select>
+        <input type="text" id="openrouter-translator-settings-model" placeholder="${DEFAULT_MODEL}" autocomplete="off">
         <p id="openrouter-translator-settings-current-model" class="current-model-label"></p>
         <div class="openrouter-translator-settings-actions">
           <button type="button" id="openrouter-translator-settings-cancel">キャンセル</button>
@@ -319,16 +311,17 @@
 
     document.documentElement.appendChild(overlay);
 
-    const modelSelect = overlay.querySelector('#openrouter-translator-settings-model');
+    const modelInput = overlay.querySelector('#openrouter-translator-settings-model');
     const currentModelLabel = overlay.querySelector('#openrouter-translator-settings-current-model');
     const saveButton = overlay.querySelector('#openrouter-translator-settings-save');
     const cancelButton = overlay.querySelector('#openrouter-translator-settings-cancel');
     const dialog = overlay.querySelector('.openrouter-translator-settings-dialog');
 
-    updateCurrentModelLabel(currentModelLabel, modelSelect.value);
+    modelInput.value = currentModel;
+    updateCurrentModelLabel(currentModelLabel, modelInput.value);
 
-    modelSelect.addEventListener('change', () => {
-      updateCurrentModelLabel(currentModelLabel, modelSelect.value);
+    modelInput.addEventListener('input', () => {
+      updateCurrentModelLabel(currentModelLabel, modelInput.value);
     });
 
     function closeDialog() {
@@ -342,7 +335,7 @@
     dialog.addEventListener('click', (event) => event.stopPropagation());
 
     saveButton.addEventListener('click', async () => {
-      const model = modelSelect.value;
+      const model = resolveModel(modelInput.value);
       await gmSetValue(MODEL_STORAGE_KEY, model);
       updateCurrentModelLabel(currentModelLabel, model);
       alert('設定が保存されました。');
@@ -1214,6 +1207,7 @@
   font-weight: bold;
 }
 
+.openrouter-translator-settings-dialog input,
 .openrouter-translator-settings-dialog select {
   all: unset;
   display: block;
