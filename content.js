@@ -9,9 +9,6 @@ let selectionUpdateTimer = null;
 let lastSelectionSignature = '';
 const SELECTION_STABLE_DELAY_MS = 220;
 const SELECTION_END_DELAY_MS = 120;
-const SMALL_ICON_GAP = 8;
-const SMALL_ICON_APPROX_WIDTH = 40;
-const SMALL_ICON_APPROX_HEIGHT = 32;
 // Track the active interaction (drag/resize) and the element being interacted with.
 let activeInteraction = {
   element: null,
@@ -269,20 +266,10 @@ function getSelectionSignature(selection) {
 }
 
 function getSmallIconPopupPosition(rect) {
-  const scrollX = window.scrollX;
-  const scrollY = window.scrollY;
-  const viewport = getViewportBounds();
-  const viewportTop = viewport.top;
-
-  let x = rect.left + scrollX + rect.width / 2 - SMALL_ICON_APPROX_WIDTH / 2;
-  let y = rect.top + scrollY - SMALL_ICON_APPROX_HEIGHT - SMALL_ICON_GAP;
-
-  // Prefer above the selection so left/right drag handles stay unobstructed.
-  if (y < viewportTop + 6) {
-    y = rect.bottom + scrollY + SMALL_ICON_GAP;
-  }
-
-  return { x, y };
+  return {
+    x: rect.right + window.scrollX - 10,
+    y: rect.top + window.scrollY - 10,
+  };
 }
 
 function clearSelectionUpdateTimer() {
