@@ -43,6 +43,100 @@ const KEYBOARD_POPUP_OFFSET = 12;
 const POPUP_VIEWPORT_MARGIN = 8;
 const DETAILED_POPUP_SIDE_MARGIN = 72;
 
+// 文字サイズ倍率。スマホと広い画面（DeX など）で別々に記憶する
+const POPUP_SCALE_STORAGE_KEY = 'popupScaleByMode';
+const POPUP_SCALE_STEP = 0.1;
+const POPUP_SCALE_MIN = 0.6;
+const POPUP_SCALE_MAX = 2.5;
+// 画面の短い辺で判定するので、縦向き・横向きのどちらでも同じモードになる
+const WIDE_SCREEN_MIN_SHORT_SIDE = 900;
+const DEFAULT_WIDE_SCREEN_SCALE = 1.4;
+let savedPopupScales = {};
+
+function getScreenMode() {
+  const shortSide = Math.min(window.screen.width, window.screen.height);
+  return shortSide >= WIDE_SCREEN_MIN_SHORT_SIDE ? 'wide' : 'narrow';
+}
+
+function getDefaultPopupScale(mode) {
+  // Windows / Mac のブラウザは既定を等倍のままにし、DeX などの Android 側だけ大きくする
+  const isDesktopOs = /Windows|Macintosh/.test(navigator.userAgent);
+  return mode === 'wide' && !isDesktopOs ? DEFAULT_WIDE_SCREEN_SCALE : 1;
+}
+
+function normalizePopupScale(scale) {
+  const rounded = Math.round(scale * 10) / 10;
+  return Math.min(POPUP_SCALE_MAX, Math.max(POPUP_SCALE_MIN, rounded));
+}
+
+function getPopupScale() {
+  const mode = getScreenMode();
+  const saved = Number(savedPopupScales[mode]);
+  return Number.isFinite(saved) && saved > 0 ? normalizePopupScale(saved) : getDefaultPopupScale(mode);
+}
+
+function updateSavedPopupScales(value) {
+  savedPopupScales = value && typeof value === 'object' ? value : {};
+}
+
+function applyPopupScale(element, scale) {
+  element.style.setProperty('--ort-scale', String(scale));
+  element.dataset.ortScale = String(scale);
+}
+
+function updateZoomButtonTitles(popupElement, scale) {
+  const modeLabel = getScreenMode() === 'wide' ? '広い画面' : 'スマホ';
+  const description = `${modeLabel} ${Math.round(scale * 100)}%・画面 ${window.screen.width}×${window.screen.height}`;
+  const zoomOutButton = popupElement.querySelector('.popup-zoom-out');
+  const zoomInButton = popupElement.querySelector('.popup-zoom-in');
+  if (zoomOutButton) zoomOutButton.title = `文字を小さく（${description}）`;
+  if (zoomInButton) zoomInButton.title = `文字を大きく（${description}）`;
+}
+
+// 開いているアイコンとポップアップに今の倍率を反映する（他のフレームで変えた場合も storage.onChanged から呼ばれる）
+function applyPopupScaleToOpenPopups() {
+  const scale = getPopupScale();
+
+  if (smallIconPopup && smallIconPopup.isConnected) {
+    applyPopupScale(smallIconPopup, scale);
+    clampElementToViewport(smallIconPopup, smallIconPopup.offsetLeft, smallIconPopup.offsetTop, 6);
+  }
+
+  document.querySelectorAll('.openrouter-translator-detailed-popup').forEach((popupElement) => {
+    const previousScale = parseFloat(popupElement.dataset.ortScale);
+    // まだ保存サイズの読み込み前のポップアップは、読み込み後に倍率が入る
+    if (!Number.isFinite(previousScale) || previousScale === scale) return;
+
+    // 文字と一緒にポップアップの大きさも同じ比率で拡大縮小する
+    const width = popupElement.offsetWidth / previousScale * scale;
+    const height = popupElement.offsetHeight / previousScale * scale;
+    applyPopupScale(popupElement, scale);
+    popupElement.style.width = `${width}px`;
+    popupElement.style.height = `${height}px`;
+    updateZoomButtonTitles(popupElement, scale);
+    ensureDetailedPopupWithinViewport(popupElement);
+  });
+}
+
+function changePopupScale(delta) {
+  const mode = getScreenMode();
+  const scale = normalizePopupScale(getPopupScale() + delta);
+  savedPopupScales = { ...savedPopupScales, [mode]: scale };
+  chrome.storage.local.set({ [POPUP_SCALE_STORAGE_KEY]: savedPopupScales });
+  applyPopupScaleToOpenPopups();
+}
+
+chrome.storage.local.get([POPUP_SCALE_STORAGE_KEY], (result) => {
+  updateSavedPopupScales(result[POPUP_SCALE_STORAGE_KEY]);
+  applyPopupScaleToOpenPopups();
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes[POPUP_SCALE_STORAGE_KEY]) return;
+  updateSavedPopupScales(changes[POPUP_SCALE_STORAGE_KEY].newValue);
+  applyPopupScaleToOpenPopups();
+});
+
 function getViewportBounds() {
   const docEl = document.documentElement;
   const body = document.body;
@@ -337,6 +431,7 @@ function createSmallIconPopup(x, y) {
   smallIconPopup.innerHTML = `<span class="emoji-trigger" aria-hidden="true">${emojiIcon}</span>`;
 
   document.body.appendChild(smallIconPopup);
+  applyPopupScale(smallIconPopup, getPopupScale());
   smallIconPopup.style.left = `${x}px`;
   smallIconPopup.style.top = `${y}px`;
   smallIconPopup.classList.remove('icon-interactive');
@@ -366,9 +461,10 @@ function createSmallIconPopup(x, y) {
   });
 }
 
-// 保存されたポップアップサイズを取得する関数
+// 保存されたポップアップサイズを取得する関数（サイズは倍率 100% 換算で保存している）
 function getSavedPopupSize(callback) {
-  chrome.storage.local.get(['popupWidth', 'popupHeight'], (result) => {
+  chrome.storage.local.get(['popupWidth', 'popupHeight', POPUP_SCALE_STORAGE_KEY], (result) => {
+    updateSavedPopupScales(result[POPUP_SCALE_STORAGE_KEY]);
     const width = result.popupWidth || DEFAULT_POPUP_WIDTH;
     const height = result.popupHeight || DEFAULT_POPUP_HEIGHT;
     callback(width, height);
@@ -376,10 +472,10 @@ function getSavedPopupSize(callback) {
 }
 
 // ポップアップサイズを保存する関数
-function savePopupSize(width, height) {
+function savePopupSize(width, height, scale = 1) {
   chrome.storage.local.set({
-    popupWidth: width,
-    popupHeight: height
+    popupWidth: Math.round(width / scale),
+    popupHeight: Math.round(height / scale)
   });
 }
 
@@ -393,7 +489,11 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
   popupElement.dataset.popupId = `popup-translator-${popupIdCounter++}`;
 
   popupElement.innerHTML = `
-    <button class="popup-close-button" title="閉じる">&times;</button>
+    <div class="popup-toolbar">
+      <button type="button" class="popup-toolbar-button popup-zoom-button popup-zoom-out" aria-label="文字を小さく">&minus;</button>
+      <button type="button" class="popup-toolbar-button popup-zoom-button popup-zoom-in" aria-label="文字を大きく">+</button>
+      <button type="button" class="popup-toolbar-button popup-close-button" title="閉じる" aria-label="閉じる">&times;</button>
+    </div>
     <div class="translator-popup-content">
       <div id="inlineLoadingIndicator" style="display: ${isLoading ? 'block' : 'none'};">...</div>
       <div id="inlineTranslationOutput" class="translation-output"></div>
@@ -414,8 +514,11 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
   getSavedPopupSize((width, height) => {
     if (!popupElement.isConnected) return;
 
-    popupElement.style.width = `${width}px`;
-    popupElement.style.height = `${height}px`;
+    const scale = getPopupScale();
+    applyPopupScale(popupElement, scale);
+    updateZoomButtonTitles(popupElement, scale);
+    popupElement.style.width = `${width * scale}px`;
+    popupElement.style.height = `${height * scale}px`;
 
     ensureDetailedPopupWithinViewport(popupElement, { desiredLeft: x, desiredTop: y });
     popupElement.style.visibility = '';
@@ -499,6 +602,14 @@ function setupPopupInteractions(popupElement) {
       removeDetailedPopup(popupElement);
     });
   }
+
+  popupElement.querySelectorAll('.popup-zoom-button').forEach((zoomButton) => {
+    zoomButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const direction = zoomButton.classList.contains('popup-zoom-in') ? 1 : -1;
+      changePopupScale(direction * POPUP_SCALE_STEP);
+    });
+  });
 
   setupResizeHandlers(popupElement);
 
@@ -610,7 +721,8 @@ const handlePointerUp = () => {
     ensureDetailedPopupWithinViewport(activeInteraction.element);
     const width = activeInteraction.element.offsetWidth;
     const height = activeInteraction.element.offsetHeight;
-    savePopupSize(width, height); // Saves size for future popups
+    const scale = parseFloat(activeInteraction.element.dataset.ortScale) || 1;
+    savePopupSize(width, height, scale); // Saves size for future popups
   }
 
   // Reset interaction state

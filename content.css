@@ -7,13 +7,14 @@
   cursor: pointer;
   background-color: rgba(240, 240, 240, 0.95);
   border: 1px solid #ccc;
-  border-radius: 15px;
-  padding: 3px 6px;
+  /* --ort-scale は content.js が画面モード（スマホ / 広い画面）ごとの倍率を入れる */
+  border-radius: calc(15px * var(--ort-scale, 1));
+  padding: calc(3px * var(--ort-scale, 1)) calc(6px * var(--ort-scale, 1));
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: calc(14px * var(--ort-scale, 1));
   line-height: 1;
   pointer-events: none;
   touch-action: manipulation;
@@ -27,8 +28,8 @@
 
 @media (max-width: 480px) {
   #openrouter-translator-small-icon-popup {
-    font-size: 18px;
-    padding: 6px 8px;
+    font-size: calc(18px * var(--ort-scale, 1));
+    padding: calc(6px * var(--ort-scale, 1)) calc(8px * var(--ort-scale, 1));
   }
 }
 
@@ -45,10 +46,10 @@
   color: #abb2bf; /* ダークモードテキスト */
   border: 1px solid #444c56;
   border-radius: 8px;
-  padding: 15px; /* Ensure padding for close button positioning */
+  padding: calc(15px * var(--ort-scale, 1)); /* Ensure padding for close button positioning */
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   font-family: "Noto Sans JP", sans-serif !important;
-  font-size: 14px;
+  font-size: calc(14px * var(--ort-scale, 1));
   /* 固定幅を廃止し、ビューポート幅に収める */
   width: min(400px, 95vw); /* 初期推奨幅だが画面に合わせて縮む */
   max-width: 95vw; /* 保存された幅が大きくてもはみ出さない */
@@ -60,20 +61,43 @@
   flex-direction: column; /* Content flows downwards */
 }
 
-/* Close button for the detailed popup */
-.openrouter-translator-detailed-popup .popup-close-button {
+/* 右上の − / + / × ボタン。同じフォント・サイズで1行に並べ、記号だけを表示する */
+.openrouter-translator-detailed-popup .popup-toolbar {
   position: absolute;
-  top: 8px; /* Adjust for visual preference */
-  right: 10px; /* Adjust for visual preference */
-  background: none;
-  border: none;
-  font-size: 22px; /* Make it a bit larger for easier clicking */
+  top: calc(4px * var(--ort-scale, 1));
+  right: calc(4px * var(--ort-scale, 1));
+  display: flex;
+  align-items: center;
+  z-index: 10; /* Above other content within the popup */
+}
+
+.openrouter-translator-detailed-popup .popup-toolbar-button {
+  all: unset; /* ページ側やブラウザ既定の button スタイル（枠・背景・フォント）を使わない */
+  box-sizing: border-box;
+  /* 押せる範囲は透明な余白で矩形に広げる */
+  padding: calc(4px * var(--ort-scale, 1)) calc(7px * var(--ort-scale, 1));
+  font-size: calc(20px * var(--ort-scale, 1));
+  font-weight: bold;
+  line-height: 1;
   color: #abb2bf;
   cursor: pointer;
-  padding: 0; /* Remove padding if not needed for visual balance */
-  line-height: 1; /* Ensure tight fit */
-  z-index: 10; /* Above other content within the popup */
-  font-weight: bold;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.openrouter-translator-detailed-popup .popup-toolbar-button:focus-visible {
+  outline: 1px solid #61afef;
+  border-radius: 4px;
+}
+
+.openrouter-translator-detailed-popup .popup-zoom-button:hover {
+  color: #61afef;
+}
+
+.openrouter-translator-detailed-popup .popup-close-button {
+  /* × は字形の左右の余白が広いので、− と + の間と同じ間隔に見えるよう詰める */
+  padding-left: calc(4px * var(--ort-scale, 1));
 }
 
 .openrouter-translator-detailed-popup .popup-close-button:hover {
@@ -119,7 +143,7 @@
   overflow: hidden; /* Prevent content from overflowing popup boundaries before scroll kicks in */
   /* 小さい画面で子要素のスクロールが効くようにする */
   min-height: 0;
-  margin-top: 15px; /* Add some space below the potential close button area */
+  margin-top: calc(15px * var(--ort-scale, 1)); /* Add some space below the potential close button area */
 }
 
 .openrouter-translator-detailed-popup .language-selector {
@@ -142,8 +166,8 @@
   color: #abb2bf;
 }
 
-.openrouter-translator-detailed-popup button:not(.popup-close-button) {
-  /* Exclude close button from this styling */
+.openrouter-translator-detailed-popup button:not(.popup-close-button):not(.popup-zoom-button) {
+  /* Exclude close and zoom buttons from this styling */
   background-color: #61afef;
   color: #282c34;
   border: none;
@@ -154,7 +178,7 @@
   margin-top: 10px;
 }
 
-.openrouter-translator-detailed-popup button:not(.popup-close-button):hover {
+.openrouter-translator-detailed-popup button:not(.popup-close-button):not(.popup-zoom-button):hover {
   background-color: #5299d8;
 }
 
@@ -166,7 +190,7 @@
 
 .openrouter-translator-detailed-popup .translation-output {
   background-color: #0b0d0f; /* Should be same as popup or slightly different if desired */
-  padding: 10px;
+  padding: calc(10px * var(--ort-scale, 1));
   border-radius: 4px;
   min-height: 40px;
   /* margin-top: 0; Removed, handled by translator-popup-content margin-top */
