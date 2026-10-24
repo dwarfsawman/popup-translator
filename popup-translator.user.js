@@ -29,7 +29,7 @@
   const POPUP_VIEWPORT_MARGIN = 8;
   const DETAILED_POPUP_SIDE_MARGIN = 72;
   const API_URL = "https://openrouter.ai/api/v1/chat/completions";
-  const DEFAULT_MODEL = "openai/gpt-5.6-luna";
+  const DEFAULT_MODEL = "openai/gpt-6-luna";
   const MODEL_STORAGE_KEY = "openrouterModel";
 
   // ---------- State ----------

@@ -1,7 +1,7 @@
 /* global chrome */
 // background.js - OpenRouter API対応
 
-const DEFAULT_MODEL = "openai/gpt-5.6-luna";
+const DEFAULT_MODEL = "openai/gpt-6-luna";
 
 // Create context menu on install
 chrome.runtime.onInstalled.addListener(() => {
