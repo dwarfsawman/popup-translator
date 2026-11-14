@@ -12,6 +12,7 @@ const SELECTION_END_DELAY_MS = 120;
 // Track the active interaction (drag/resize) and the element being interacted with.
 let activeInteraction = {
   element: null,
+  pointerId: null,
   isDragging: false,
   isResizing: false,
   resizeType: '',
@@ -41,7 +42,7 @@ const DEFAULT_POPUP_WIDTH = 400;
 const DEFAULT_POPUP_HEIGHT = 300;
 const KEYBOARD_POPUP_OFFSET = 12;
 const POPUP_VIEWPORT_MARGIN = 8;
-const DETAILED_POPUP_SIDE_MARGIN = 72;
+const DETAILED_POPUP_SIDE_MARGIN = 8;
 
 // 文字サイズ倍率。スマホと広い画面（DeX など）で別々に記憶する
 const POPUP_SCALE_STORAGE_KEY = 'popupScaleByMode';
@@ -137,6 +138,59 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   applyPopupScaleToOpenPopups();
 });
 
+// Return the visible rectangle in this window's client coordinates. Readers often
+// put a very wide iframe inside an overflow:hidden scroller (also in shadow DOM).
+function getVisibleWindowRect(targetWindow) {
+  const viewport = targetWindow.visualViewport;
+  const visible = {
+    left: viewport ? viewport.offsetLeft : 0,
+    top: viewport ? viewport.offsetTop : 0,
+    right: (viewport ? viewport.offsetLeft + viewport.width : targetWindow.innerWidth),
+    bottom: (viewport ? viewport.offsetTop + viewport.height : targetWindow.innerHeight),
+  };
+
+  try {
+    const frame = targetWindow.frameElement;
+    if (!frame || targetWindow.parent === targetWindow) return visible;
+    const parentWindow = targetWindow.parent;
+    const clipped = getVisibleWindowRect(parentWindow);
+    const frameRect = frame.getBoundingClientRect();
+    const scaleX = frame.offsetWidth ? frameRect.width / frame.offsetWidth : 1;
+    const scaleY = frame.offsetHeight ? frameRect.height / frame.offsetHeight : 1;
+    if (scaleX <= 0 || scaleY <= 0) return visible;
+    const originX = frameRect.left + frame.clientLeft * scaleX;
+    const originY = frameRect.top + frame.clientTop * scaleY;
+
+    // Follow composed ancestors so clipping inside a reader's shadow root counts.
+    let ancestor = frame.parentElement || frame.getRootNode().host;
+    while (ancestor) {
+      const style = parentWindow.getComputedStyle(ancestor);
+      const rect = ancestor.getBoundingClientRect();
+      const sx = ancestor.offsetWidth ? rect.width / ancestor.offsetWidth : 1;
+      const sy = ancestor.offsetHeight ? rect.height / ancestor.offsetHeight : 1;
+      const clipsX = /^(hidden|clip|scroll|auto)$/.test(style.overflowX);
+      const clipsY = /^(hidden|clip|scroll|auto)$/.test(style.overflowY);
+      if (clipsX) {
+        clipped.left = Math.max(clipped.left, rect.left + ancestor.clientLeft * sx);
+        clipped.right = Math.min(clipped.right, rect.left + (ancestor.clientLeft + ancestor.clientWidth) * sx);
+      }
+      if (clipsY) {
+        clipped.top = Math.max(clipped.top, rect.top + ancestor.clientTop * sy);
+        clipped.bottom = Math.min(clipped.bottom, rect.top + (ancestor.clientTop + ancestor.clientHeight) * sy);
+      }
+      ancestor = ancestor.parentElement || ancestor.getRootNode().host;
+    }
+
+    visible.left = Math.max(visible.left, (clipped.left - originX) / scaleX);
+    visible.top = Math.max(visible.top, (clipped.top - originY) / scaleY);
+    visible.right = Math.min(visible.right, (clipped.right - originX) / scaleX);
+    visible.bottom = Math.min(visible.bottom, (clipped.bottom - originY) / scaleY);
+  } catch (error) {
+    // Cross-origin parents are inaccessible; retain the local viewport bounds.
+  }
+  return visible;
+}
+
 function getViewportBounds() {
   const docEl = document.documentElement;
   const body = document.body;
@@ -144,30 +198,14 @@ function getViewportBounds() {
   const fallbackScrollY = window.scrollY || (docEl && docEl.scrollTop) || (body && body.scrollTop) || 0;
   const visualViewport = window.visualViewport;
 
-  try {
-    if (window.parent && window.parent !== window && window.frameElement) {
-      const frameRect = window.frameElement.getBoundingClientRect();
-      const parentViewport = window.parent.visualViewport;
-      const parentLeft = parentViewport ? parentViewport.offsetLeft : 0;
-      const parentTop = parentViewport ? parentViewport.offsetTop : 0;
-      const parentRight = parentLeft + (parentViewport ? parentViewport.width : window.parent.innerWidth);
-      const parentBottom = parentTop + (parentViewport ? parentViewport.height : window.parent.innerHeight);
-      const visibleLeft = Math.max(parentLeft, frameRect.left);
-      const visibleTop = Math.max(parentTop, frameRect.top);
-      const visibleRight = Math.min(parentRight, frameRect.right);
-      const visibleBottom = Math.min(parentBottom, frameRect.bottom);
-
-      if (visibleRight > visibleLeft && visibleBottom > visibleTop) {
-        return {
-          left: fallbackScrollX + visibleLeft - frameRect.left,
-          top: fallbackScrollY + visibleTop - frameRect.top,
-          width: visibleRight - visibleLeft,
-          height: visibleBottom - visibleTop,
-        };
-      }
-    }
-  } catch (error) {
-    // Cross-origin frames can deny parent/frame access; fall back to the local viewport.
+  const visible = getVisibleWindowRect(window);
+  if (visible.right > visible.left && visible.bottom > visible.top) {
+    return {
+      left: fallbackScrollX + visible.left,
+      top: fallbackScrollY + visible.top,
+      width: visible.right - visible.left,
+      height: visible.bottom - visible.top,
+    };
   }
 
   if (visualViewport) {
@@ -221,11 +259,13 @@ function normalizeViewportMargins(margin = POPUP_VIEWPORT_MARGIN) {
 }
 
 function getDetailedPopupViewportMargins() {
+  const viewport = getViewportBounds();
+  const sideMargin = Math.min(DETAILED_POPUP_SIDE_MARGIN, Math.max(0, (viewport.width - 200) / 2), viewport.width / 10);
   return {
-    top: POPUP_VIEWPORT_MARGIN,
-    right: DETAILED_POPUP_SIDE_MARGIN,
-    bottom: POPUP_VIEWPORT_MARGIN,
-    left: DETAILED_POPUP_SIDE_MARGIN,
+    top: Math.min(POPUP_VIEWPORT_MARGIN, viewport.height / 10),
+    right: sideMargin,
+    bottom: Math.min(POPUP_VIEWPORT_MARGIN, viewport.height / 10),
+    left: sideMargin,
   };
 }
 
@@ -255,8 +295,12 @@ function fitDetailedPopupToViewport(popupElement, margin = POPUP_VIEWPORT_MARGIN
 
   const viewport = getViewportBounds();
   const margins = normalizeViewportMargins(margin);
-  const widthLimit = Math.max(200, Math.floor(viewport.width - margins.left - margins.right));
-  const heightLimit = Math.max(100, Math.floor(viewport.height - margins.top - margins.bottom));
+  const widthLimit = Math.max(1, Math.floor(viewport.width - margins.left - margins.right));
+  const heightLimit = Math.max(1, Math.floor(viewport.height - margins.top - margins.bottom));
+  popupElement.style.minWidth = `${Math.min(200, widthLimit)}px`;
+  popupElement.style.minHeight = `${Math.min(100, heightLimit)}px`;
+  popupElement.style.maxWidth = `${widthLimit}px`;
+  popupElement.style.maxHeight = `${heightLimit}px`;
 
   if (popupElement.offsetWidth > widthLimit) {
     popupElement.style.width = `${widthLimit}px`;
@@ -275,7 +319,7 @@ function ensureDetailedPopupWithinViewport(popupElement, options = {}) {
   const desiredTop = Number.isFinite(options.desiredTop) ? options.desiredTop : popupElement.offsetTop;
   clampElementToViewport(popupElement, desiredLeft, desiredTop, margin, {
     clampX: options.clampX !== false,
-    clampY: options.clampY === true,
+    clampY: options.clampY !== false,
   });
 }
 
@@ -316,6 +360,21 @@ function removePopups() {
   // Detailed popups are now removed individually
   // removeDetailedPopup();
 }
+
+// Some readers claim pull-down gestures on document during capture, before any
+// popup listener runs. Intercept touch events one level earlier, on window.
+// Stopping propagation preserves native scrolling/clicks; preventDefault would
+// also disable scrolling inside the translated text.
+function isolatePopupTouch(event) {
+  const popup = event.composedPath().find((node) =>
+    node instanceof Element && node.classList.contains('openrouter-translator-detailed-popup'));
+  if (!popup) return;
+  event.stopImmediatePropagation();
+}
+
+['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach((type) => {
+  window.addEventListener(type, isolatePopupTouch, { capture: true, passive: true });
+});
 
 function getRangeDisplayRect(range) {
   if (!range) return null;
@@ -490,6 +549,7 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
 
   popupElement.innerHTML = `
     <div class="popup-toolbar">
+      <div class="popup-drag-handle" title="ドラッグして移動" aria-label="ドラッグして移動"></div>
       <button type="button" class="popup-toolbar-button popup-zoom-button popup-zoom-out" aria-label="文字を小さく">&minus;</button>
       <button type="button" class="popup-toolbar-button popup-zoom-button popup-zoom-in" aria-label="文字を大きく">+</button>
       <button type="button" class="popup-toolbar-button popup-close-button" title="閉じる" aria-label="閉じる">&times;</button>
@@ -500,7 +560,7 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
     </div>
     <div class="resize-handle resize-handle-e"></div>
     <div class="resize-handle resize-handle-s"></div>
-    <div class="resize-handle resize-handle-se"></div>
+    <div class="resize-handle resize-handle-se" title="ドラッグしてサイズ変更" aria-label="ドラッグしてサイズ変更"></div>
   `;
 
   document.body.appendChild(popupElement);
@@ -574,17 +634,20 @@ function setupPopupInteractions(popupElement) {
   const bringToFront = () => {
     popupElement.style.zIndex = 10000 + popupIdCounter++;
   };
-  popupElement.addEventListener('mousedown', bringToFront, true);
-  popupElement.addEventListener('touchstart', bringToFront, { passive: true, capture: true });
+  popupElement.addEventListener('pointerdown', bringToFront, true);
 
   const startDrag = (e) => {
+    if (!e.isPrimary || e.button !== 0 || activeInteraction.element) return;
     if (e.target.closest('button, .translation-output, .resize-handle, .popup-close-button')) {
       return;
     }
     e.preventDefault();
+    e.stopPropagation();
     const { x, y } = getEventCoords(e);
     activeInteraction.isDragging = true;
     activeInteraction.element = popupElement;
+    activeInteraction.pointerId = e.pointerId;
+    popupElement.setPointerCapture(e.pointerId);
     activeInteraction.dragStartX = x;
     activeInteraction.dragStartY = y;
     activeInteraction.popupStartX = popupElement.offsetLeft;
@@ -592,8 +655,14 @@ function setupPopupInteractions(popupElement) {
 
     popupElement.style.userSelect = 'none';
   };
-  dragHandle.addEventListener('mousedown', startDrag, { passive: false });
-  dragHandle.addEventListener('touchstart', startDrag, { passive: false });
+  dragHandle.addEventListener('pointerdown', startDrag);
+  popupElement.addEventListener('lostpointercapture', handlePointerUp);
+  // Reader apps also handle these events to turn pages. Keep popup gestures local,
+  // while allowing the browser's native text scrolling and button clicks.
+  popupElement.addEventListener('pointerdown', (event) => event.stopPropagation());
+  popupElement.addEventListener('touchstart', (event) => event.stopPropagation(), { passive: true });
+  popupElement.addEventListener('touchend', (event) => event.stopPropagation(), { passive: true });
+  popupElement.addEventListener('click', (event) => event.stopPropagation());
 
   const closeButton = popupElement.querySelector('.popup-close-button');
   if (closeButton) {
@@ -645,6 +714,7 @@ function setupResizeHandlers(popupElement) {
   if (!eastResize || !southResize || !southEastResize) return;
 
   const startResize = (e, type) => {
+    if (!e.isPrimary || e.button !== 0 || activeInteraction.element) return;
     e.preventDefault();
     e.stopPropagation();
     const { x, y } = getEventCoords(e);
@@ -652,6 +722,8 @@ function setupResizeHandlers(popupElement) {
     activeInteraction.isResizing = true;
     activeInteraction.resizeType = type;
     activeInteraction.element = popupElement;
+    activeInteraction.pointerId = e.pointerId;
+    popupElement.setPointerCapture(e.pointerId);
     activeInteraction.startX = x;
     activeInteraction.startY = y;
     activeInteraction.startWidth = popupElement.offsetWidth;
@@ -659,14 +731,9 @@ function setupResizeHandlers(popupElement) {
     document.body.style.cursor = `${type}-resize`;
   };
 
-  eastResize.addEventListener('mousedown', (e) => startResize(e, 'e'));
-  southResize.addEventListener('mousedown', (e) => startResize(e, 's'));
-  southEastResize.addEventListener('mousedown', (e) => startResize(e, 'se'));
-
-  // Touch support
-  eastResize.addEventListener('touchstart', (e) => startResize(e, 'e'), { passive: false });
-  southResize.addEventListener('touchstart', (e) => startResize(e, 's'), { passive: false });
-  southEastResize.addEventListener('touchstart', (e) => startResize(e, 'se'), { passive: false });
+  eastResize.addEventListener('pointerdown', (e) => startResize(e, 'e'));
+  southResize.addEventListener('pointerdown', (e) => startResize(e, 's'));
+  southEastResize.addEventListener('pointerdown', (e) => startResize(e, 'se'));
 }
 
 // Global move handler for dragging and resizing (mouse & touch).
@@ -677,7 +744,9 @@ const handlePointerMove = (e) => {
     y: y + window.scrollY,
   };
 
-  if (!activeInteraction.element) return;
+  if (!activeInteraction.element || e.pointerId !== activeInteraction.pointerId) return;
+  e.preventDefault();
+  e.stopPropagation();
 
   if (activeInteraction.isDragging) {
     const dx = x - activeInteraction.dragStartX;
@@ -691,26 +760,24 @@ const handlePointerMove = (e) => {
   if (activeInteraction.isResizing) {
     if (activeInteraction.resizeType.includes('e')) {
       const width = activeInteraction.startWidth + (x - activeInteraction.startX);
-      if (width >= 200) {
-        activeInteraction.element.style.width = `${width}px`;
-      }
+      activeInteraction.element.style.width = `${Math.max(200, width)}px`;
     }
     if (activeInteraction.resizeType.includes('s')) {
       const height = activeInteraction.startHeight + (y - activeInteraction.startY);
-      if (height >= 100) {
-        activeInteraction.element.style.height = `${height}px`;
-      }
+      activeInteraction.element.style.height = `${Math.max(100, height)}px`;
     }
     ensureDetailedPopupWithinViewport(activeInteraction.element);
   }
 };
-document.addEventListener('mousemove', handlePointerMove, { passive: false });
-document.addEventListener('touchmove', handlePointerMove, { passive: false });
+// Capture before page/reader handlers, even when the finger leaves the popup.
+document.addEventListener('pointermove', handlePointerMove, { passive: false, capture: true });
 
 // Global pointer up handler to end interactions.
-const handlePointerUp = () => {
+const handlePointerUp = (event) => {
+  if (activeInteraction.element && event.pointerId !== activeInteraction.pointerId) return;
   isPointerDown = false;
   if (!activeInteraction.element) return;
+  event.stopPropagation();
 
   if (activeInteraction.isDragging) {
     activeInteraction.element.style.userSelect = 'auto';
@@ -725,9 +792,12 @@ const handlePointerUp = () => {
     savePopupSize(width, height, scale); // Saves size for future popups
   }
 
-  // Reset interaction state
+  const finishedElement = activeInteraction.element;
+  const finishedPointerId = activeInteraction.pointerId;
+  // Reset before releasing capture, which can dispatch lostpointercapture.
   activeInteraction = {
     element: null,
+    pointerId: null,
     isDragging: false,
     isResizing: false,
     resizeType: '',
@@ -740,9 +810,12 @@ const handlePointerUp = () => {
     startX: 0,
     startY: 0,
   };
+  if (finishedElement.hasPointerCapture(finishedPointerId)) {
+    finishedElement.releasePointerCapture(finishedPointerId);
+  }
 };
-document.addEventListener('mouseup', handlePointerUp);
-document.addEventListener('touchend', handlePointerUp);
+document.addEventListener('pointerup', handlePointerUp, true);
+document.addEventListener('pointercancel', handlePointerUp, true);
 document.addEventListener('touchcancel', () => {
   isPointerDown = false;
 });
@@ -751,6 +824,18 @@ window.addEventListener('scroll', scheduleTranslatorViewportClamp, true);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', scheduleTranslatorViewportClamp);
   window.visualViewport.addEventListener('scroll', scheduleTranslatorViewportClamp);
+}
+// A paginated reader may move the iframe without scrolling its own document.
+try {
+  let ancestorWindow = window.parent;
+  while (ancestorWindow && ancestorWindow !== window) {
+    ancestorWindow.addEventListener('resize', scheduleTranslatorViewportClamp);
+    ancestorWindow.addEventListener('scroll', scheduleTranslatorViewportClamp, true);
+    if (ancestorWindow === ancestorWindow.parent) break;
+    ancestorWindow = ancestorWindow.parent;
+  }
+} catch (error) {
+  // Cross-origin ancestors cannot be observed.
 }
 
 // Pointer start listener to handle popup dismissal

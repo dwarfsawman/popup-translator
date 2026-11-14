@@ -65,10 +65,33 @@
 .openrouter-translator-detailed-popup .popup-toolbar {
   position: absolute;
   top: calc(4px * var(--ort-scale, 1));
+  left: calc(4px * var(--ort-scale, 1));
   right: calc(4px * var(--ort-scale, 1));
   display: flex;
   align-items: center;
   z-index: 10; /* Above other content within the popup */
+}
+
+.openrouter-translator-detailed-popup .popup-drag-handle {
+  flex: 1;
+  align-self: stretch;
+  min-width: 24px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.openrouter-translator-detailed-popup .popup-drag-handle::before {
+  content: '';
+  width: 32px;
+  height: 4px;
+  border-radius: 2px;
+  background: #6e7886;
 }
 
 .openrouter-translator-detailed-popup .popup-toolbar-button {
@@ -109,13 +132,16 @@
   position: absolute;
   background: transparent;
   z-index: 5; /* Ensure resize handles are interactable */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .openrouter-translator-detailed-popup .resize-handle-e {
-  top: 0;
+  top: 44px;
   right: 0;
   width: 10px; /* Slightly wider for easier grabbing */
-  height: 100%;
+  height: calc(100% - 44px);
   cursor: e-resize;
 }
 
@@ -130,10 +156,35 @@
 .openrouter-translator-detailed-popup .resize-handle-se {
   bottom: 0;
   right: 0;
-  width: 12px; /* Slightly wider for easier grabbing */
-  height: 12px;
+  width: 28px;
+  height: 28px;
   cursor: se-resize;
   z-index: 6; /* Above other handles if overlapping */
+}
+
+.openrouter-translator-detailed-popup .resize-handle-se::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid #6e7886;
+  border-bottom: 2px solid #6e7886;
+}
+
+@media (any-pointer: coarse) {
+  .openrouter-translator-detailed-popup .popup-drag-handle {
+    min-height: 44px;
+  }
+  .openrouter-translator-detailed-popup .popup-toolbar-button {
+    min-width: 44px;
+    min-height: 44px;
+    text-align: center;
+  }
+  .openrouter-translator-detailed-popup .resize-handle-e { width: 20px; }
+  .openrouter-translator-detailed-popup .resize-handle-s { height: 20px; }
+  .openrouter-translator-detailed-popup .resize-handle-se { width: 40px; height: 40px; }
 }
 
 .openrouter-translator-detailed-popup .translator-popup-content {
@@ -143,7 +194,7 @@
   overflow: hidden; /* Prevent content from overflowing popup boundaries before scroll kicks in */
   /* 小さい画面で子要素のスクロールが効くようにする */
   min-height: 0;
-  margin-top: calc(15px * var(--ort-scale, 1)); /* Add some space below the potential close button area */
+  margin-top: max(36px, calc(32px * var(--ort-scale, 1)));
 }
 
 .openrouter-translator-detailed-popup .language-selector {
@@ -189,6 +240,8 @@
 }
 
 .openrouter-translator-detailed-popup .translation-output {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
   background-color: #0b0d0f; /* Should be same as popup or slightly different if desired */
   padding: calc(10px * var(--ort-scale, 1));
   border-radius: 4px;
