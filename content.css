@@ -86,14 +86,6 @@
   -webkit-user-select: none;
 }
 
-.openrouter-translator-detailed-popup .popup-drag-handle::before {
-  content: '';
-  width: 32px;
-  height: 4px;
-  border-radius: 2px;
-  background: #6e7886;
-}
-
 .openrouter-translator-detailed-popup .popup-toolbar-button {
   all: unset; /* ページ側やブラウザ既定の button スタイル（枠・背景・フォント）を使わない */
   box-sizing: border-box;
@@ -160,17 +152,6 @@
   height: 28px;
   cursor: se-resize;
   z-index: 6; /* Above other handles if overlapping */
-}
-
-.openrouter-translator-detailed-popup .resize-handle-se::after {
-  content: '';
-  position: absolute;
-  right: 5px;
-  bottom: 5px;
-  width: 10px;
-  height: 10px;
-  border-right: 2px solid #6e7886;
-  border-bottom: 2px solid #6e7886;
 }
 
 @media (any-pointer: coarse) {
