@@ -104,12 +104,17 @@ async function translateTextWithOpenRouter(text, targetLanguage, apiKey, model) 
     }
 
     const data = await response.json();
-    if (data.choices && data.choices.length > 0 && data.choices[0].message) {
-      return { translatedText: data.choices[0].message.content.trim() };
-    } else {
+    const message = data?.choices?.[0]?.message;
+    if (!message) {
       console.error("OpenRouter API Response format error:", data);
       return { error: "APIからの応答形式が正しくありません。" };
     }
+
+    const translatedText = typeof message.content === "string" ? message.content.trim() : "";
+    if (!translatedText) {
+      return { error: "APIから翻訳結果が返されませんでした。" };
+    }
+    return { translatedText };
   } catch (error) {
     console.error("Fetch Error:", error);
     return {

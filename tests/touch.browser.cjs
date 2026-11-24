@@ -89,3 +89,63 @@ test('popup touch scrolling bypasses reader capture gestures and preserves contr
     await browser.close();
   }
 });
+
+test('a failed translation can be retried in the same popup', async () => {
+  const browser = await chromium.launch(process.env.CHROME_EXECUTABLE
+    ? { executablePath: process.env.CHROME_EXECUTABLE, headless: true }
+    : { channel: 'chrome', headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true });
+    await page.setContent('<body></body>');
+    await page.evaluate(() => {
+      window.translationRequests = [];
+      window.chrome = {
+        storage: {
+          local: { get: (keys, callback) => callback({}), set: () => {} },
+          onChanged: { addListener: () => {} },
+        },
+        runtime: {
+          onMessage: { addListener: (listener) => { window.openTranslation = listener; } },
+          sendMessage: (request, callback) => window.translationRequests.push({ request, callback }),
+        },
+      };
+    });
+    await page.addStyleTag({ path: path.join(__dirname, '../content.css') });
+    await page.addScriptTag({ path: path.join(__dirname, '../content.js') });
+    await page.evaluate(() => {
+      window.openTranslation({ action: 'showPopupFromContextMenu', selection: 'Original text' });
+      window.translationRequests[0].callback({ error: 'APIから翻訳結果が返されませんでした。' });
+      selectedTextGlobal = 'Different selection';
+    });
+
+    const popup = page.locator('.openrouter-translator-detailed-popup');
+    const popupId = await popup.getAttribute('data-popup-id');
+    const retry = popup.getByRole('button', { name: '再試行' });
+    await retry.tap();
+    assert.equal(await retry.count(), 0);
+    assert.equal(await popup.locator('#inlineLoadingIndicator').isVisible(), true);
+
+    await page.evaluate(() => {
+      chrome.runtime.lastError = { message: 'Connection lost' };
+      window.translationRequests[1].callback();
+      delete chrome.runtime.lastError;
+    });
+    assert.equal(await popup.getByText('エラー: Connection lost').isVisible(), true);
+    await retry.tap();
+    await page.evaluate(() => {
+      window.translationRequests[2].callback({ translatedText: '元の文章' });
+    });
+
+    assert.equal(await popup.count(), 1);
+    assert.equal(await popup.getAttribute('data-popup-id'), popupId);
+    assert.equal(await popup.locator('.translation-output').textContent(), '元の文章');
+    assert.equal(await popup.locator('#inlineLoadingIndicator').isVisible(), false);
+    assert.equal(await retry.count(), 0);
+    const requests = await page.evaluate(() => window.translationRequests.map(({ request }) => request));
+    assert.deepEqual(requests, Array(3).fill({
+      action: 'translate', text: 'Original text', targetLanguage: 'Japanese',
+    }));
+  } finally {
+    await browser.close();
+  }
+});

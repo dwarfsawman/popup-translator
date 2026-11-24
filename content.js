@@ -591,39 +591,48 @@ function createDetailedPopup(x, y, originalText, isLoading = false) {
 }
 
 function requestTranslationForPopup(popupElement, text) {
-  if (!popupElement) return;
+  if (!popupElement?.isConnected) return;
 
-  chrome.runtime.sendMessage(
-    { action: "translate", text, targetLanguage: "Japanese" },
-    (response) => {
-      if (!popupElement || !popupElement.isConnected) return;
-      const loadingIndicator = popupElement.querySelector('#inlineLoadingIndicator');
-      const outputArea = popupElement.querySelector('#inlineTranslationOutput');
+  const loadingIndicator = popupElement.querySelector('#inlineLoadingIndicator');
+  const outputArea = popupElement.querySelector('#inlineTranslationOutput');
+  loadingIndicator.style.display = 'block';
+  outputArea.textContent = '';
 
-      if (loadingIndicator) loadingIndicator.style.display = 'none';
-      if (!outputArea) return;
+  const showResult = (response, messageError) => {
+    if (!popupElement.isConnected) return;
 
-      if (chrome.runtime.lastError) {
-        outputArea.textContent = 'エラー: ' + chrome.runtime.lastError.message;
-        ensureDetailedPopupWithinViewport(popupElement);
-        return;
-      }
-
-      if (response) {
-        if (response.error) {
-          outputArea.textContent = 'エラー: ' + response.error;
-        } else if (response.translatedText) {
-          outputArea.textContent = response.translatedText;
-        } else {
-          outputArea.textContent = '翻訳結果がありません。';
-        }
+    loadingIndicator.style.display = 'none';
+    const error = messageError || response?.error;
+    if (!error && response?.translatedText) {
+      outputArea.textContent = response.translatedText;
+    } else {
+      if (error) {
+        outputArea.textContent = 'エラー: ' + error;
       } else {
-        outputArea.textContent = '応答がありません。';
+        outputArea.textContent = response ? '翻訳結果がありません。' : '応答がありません。';
       }
 
-      ensureDetailedPopupWithinViewport(popupElement);
+      const retryButton = document.createElement('button');
+      retryButton.type = 'button';
+      retryButton.className = 'popup-retry-button';
+      retryButton.textContent = '再試行';
+      retryButton.addEventListener('click', () => {
+        requestTranslationForPopup(popupElement, text);
+      }, { once: true });
+      outputArea.appendChild(retryButton);
     }
-  );
+
+    ensureDetailedPopupWithinViewport(popupElement);
+  };
+
+  try {
+    chrome.runtime.sendMessage(
+      { action: "translate", text, targetLanguage: "Japanese" },
+      (response) => showResult(response, chrome.runtime.lastError?.message)
+    );
+  } catch (error) {
+    showResult(undefined, error.message);
+  }
 }
 
 // Sets up dragging, closing, and resizing for a specific popup element.
